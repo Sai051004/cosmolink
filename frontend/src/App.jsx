@@ -26,9 +26,12 @@ class ErrorBoundary extends React.Component {
 const VideoPlayer = ({ stream }) => {
     const ref = useRef(null);
     useEffect(() => {
-        if (ref.current && stream) ref.current.srcObject = stream;
+        if (ref.current && stream) {
+            ref.current.srcObject = stream;
+            ref.current.play().catch(e => console.error("Video remote play error:", e));
+        }
     }, [stream]);
-    return <video ref={ref} autoPlay playsInline className="w-full h-full object-cover transform -scale-x-100"></video>;
+    return <video ref={ref} autoPlay playsInline className="w-full h-full object-cover transform -scale-x-100 rounded-xl"></video>;
 };
 
 function App() {
@@ -236,9 +239,14 @@ function App() {
   useEffect(() => {
       navigator.mediaDevices.getUserMedia({ audio: true, video: true })
           .then(stream => {
+              localStreamRef.current = stream;
+              setMicOn(true);
+              setCameraOn(true);
               getDevices();
-              stream.getTracks().forEach(t => t.stop());
-          }).catch(() => getDevices());
+          }).catch(e => {
+              console.warn("Could not get initial media devices:", e);
+              getDevices();
+          });
   }, []);
 
   useEffect(() => {
@@ -259,7 +267,11 @@ function App() {
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: selectedMic ? { deviceId: { exact: selectedMic } } : true });
           if (!localStreamRef.current) localStreamRef.current = new MediaStream();
-          stream.getAudioTracks().forEach(t => localStreamRef.current.addTrack(t));
+          const newTrack = stream.getAudioTracks()[0];
+          localStreamRef.current.addTrack(newTrack);
+          peersRef.current.forEach((peer) => {
+              peer.addTrack(newTrack, localStreamRef.current);
+          });
           setMicOn(true);
       } catch (e) {
           console.error("Mic error:", e);
@@ -280,7 +292,11 @@ function App() {
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ video: selectedCamera ? { deviceId: { exact: selectedCamera } } : true });
           if (!localStreamRef.current) localStreamRef.current = new MediaStream();
-          stream.getVideoTracks().forEach(t => localStreamRef.current.addTrack(t));
+          const newTrack = stream.getVideoTracks()[0];
+          localStreamRef.current.addTrack(newTrack);
+          peersRef.current.forEach((peer) => {
+              peer.addTrack(newTrack, localStreamRef.current);
+          });
           setCameraOn(true);
       } catch (e) {
           console.error("Camera error:", e);
