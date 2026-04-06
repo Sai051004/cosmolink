@@ -149,11 +149,13 @@ function App() {
 
     socket.on('join_room_success', (data) => {
         setActiveChatRoom(data.room);
+        setMyUser(prev => prev ? { ...prev, currentRoom: data.room } : prev);
         setMessages([{ senderId: 'system', username: 'System', message: `You joined ${data.room}.`, isZone: true }]);
     });
 
     socket.on('leave_room_success', () => {
         setActiveChatRoom(null);
+        setMyUser(prev => prev ? { ...prev, currentRoom: null } : prev);
         setMessages([]);
     });
 
