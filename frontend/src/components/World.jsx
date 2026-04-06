@@ -78,7 +78,7 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
             app.stage.addChild(worldContainer);
 
              const baseMap = new PIXI.Graphics();
-             const starLayer = PIXI.ParticleContainer ? new PIXI.ParticleContainer(500) : new PIXI.Container();
+             const starLayer = new PIXI.Container();
              const roomGraphics = {};
              let stars = [];
 
