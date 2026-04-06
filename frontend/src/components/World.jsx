@@ -83,35 +83,27 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
              let stars = [];
 
              try {
-                baseMap.rect(0, 0, MAP_WIDTH, MAP_HEIGHT).fill(0x0B0C10);
+                baseMap.rect(0, 0, MAP_WIDTH, MAP_HEIGHT).fill(0x27ae60); // Original Vibrant Green
+                
+                // Keep the grid but make it subtle dark green
                 const gridSpacing = 100;
                 for(let i=0; i<=MAP_WIDTH; i+=gridSpacing) {
-                     baseMap.moveTo(i, 0).lineTo(i, MAP_HEIGHT).stroke({color: 0x3b82f6, alpha: 0.1, width: 1});
+                     baseMap.moveTo(i, 0).lineTo(i, MAP_HEIGHT).stroke({color: 0x1e8449, alpha: 0.3, width: 1});
                 }
                 for(let i=0; i<=MAP_HEIGHT; i+=gridSpacing) {
-                     baseMap.moveTo(0, i).lineTo(MAP_WIDTH, i).stroke({color: 0x3b82f6, alpha: 0.1, width: 1});
+                     baseMap.moveTo(0, i).lineTo(MAP_WIDTH, i).stroke({color: 0x1e8449, alpha: 0.3, width: 1});
                 }
                 
                 baseMap.zIndex = 0;
                 baseMap.eventMode = 'static';
                 worldContainer.addChild(baseMap);
 
+                // Optional: Remove stars for daylight academic campus
                 starLayer.zIndex = 0;
-                for(let i=0; i<300; i++) {
-                    const star = new PIXI.Graphics();
-                    const size = Math.random() * 2;
-                    star.circle(0, 0, size).fill({color: 0xffffff, alpha: Math.random() * 0.5 + 0.1});
-                    star.x = Math.random() * MAP_WIDTH;
-                    star.y = Math.random() * MAP_HEIGHT;
-                    star.speedX = (Math.random() - 0.5) * 0.5;
-                    star.speedY = (Math.random() - 0.5) * 0.5;
-                    starLayer.addChild(star);
-                    stars.push(star);
-                }
-                worldContainer.addChild(starLayer);
+                worldContainer.addChild(starLayer); // Empty now
 
                 const floor = new PIXI.Graphics();
-                floor.rect(50, 50, MAP_WIDTH - 100, MAP_HEIGHT - 100).fill(0x131722); 
+                floor.rect(50, 50, MAP_WIDTH - 100, MAP_HEIGHT - 100).fill(0xEEDCAE); // Original Light Sand/Beige Floor
                 floor.zIndex = 0;
                 floor.eventMode = 'static';
                 worldContainer.addChild(floor);
@@ -134,12 +126,14 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
 
                 WALLS.length = 4;
 
+                const textContainer = new PIXI.Container();
+
                 STRUCTURAL_ROOMS.forEach(rm => {
                     const g = new PIXI.Graphics();
                     g.rect(rm.x, rm.y, rm.w, rm.h)
                      .fill({ color: rm.color, alpha: 0.15 })
-                     .stroke({ color: rm.color, alpha: 0.9, width: 3 });
-                    g.alpha = 0.4; // Base highly visible transparency
+                     .stroke({ color: rm.color, alpha: 0.5, width: 3 });
+                    g.alpha = 0.8; // Nice visible room overlays
                     roomGraphics[rm.name] = g;
                     roomContainer.addChild(g);
                     
@@ -159,45 +153,47 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
                     
                     const text = new PIXI.Text({
                         text: rm.name,
-                        style: { fontFamily: 'ui-sans-serif, sans-serif', fontSize: 26, fill: 0xffffff, fontWeight: '900', letterSpacing: 2 }
+                        style: { fontFamily: 'ui-sans-serif, sans-serif', fontSize: 20, fill: 0xffffff, fontWeight: '900', letterSpacing: 2 }
                     });
-                    if (text.anchor) text.anchor.set(0.5, 0); 
+                    if (text.anchor) text.anchor.set(0.5, 0.5); 
                     text.x = rm.x + rm.w/2;
-                    text.y = rm.y + 8;
-                    text.alpha = 0.85;
-                    roomContainer.addChild(text);
+                    text.y = rm.y + 20; 
+                    textContainer.addChild(text);
                 });
 
                 for (let w of WALLS) {
-                    roomGfx.rect(w.x, w.y, w.w, w.h).fill(0x334155); 
+                    roomGfx.rect(w.x, w.y, w.w, w.h).fill(0x2D3748); // Original Dark Slate Walls
                 }
 
                 roomContainer.addChild(roomGfx);
+                roomContainer.addChild(textContainer);
 
                 const furnitureGfx = new PIXI.Graphics();
                 furnitureGfx.zIndex = 2;
                 
                 const drawChair = (cx, cy, dir) => {
-                    const color = 0x1e293b;
-                    furnitureGfx.roundRect(cx - 15, cy - 15, 30, 30, 5).fill(color).stroke({ color: 0x3b82f6, width: 1, alpha: 0.5 });
+                    const color = 0x2A2A2A;
+                    furnitureGfx.roundRect(cx - 15, cy - 15, 30, 30, 5).fill(color);
                     furnitureGfx.roundRect(
                         dir === 'up' || dir === 'down' ? cx - 12 : (dir === 'left' ? cx - 18 : cx + 12),
                         dir === 'left' || dir === 'right' ? cy - 12 : (dir === 'up' ? cy - 18 : cy + 12),
                         dir === 'up' || dir === 'down' ? 24 : 6,
                         dir === 'left' || dir === 'right' ? 24 : 6,
                         2
-                    ).fill(0x0f172a);
+                    ).fill(0x111111);
                 };
 
                 const drawTable = (tx, ty, tw, th, isRound = false) => {
-                    const shadowAlpha = 0.2;
+                    const shadowAlpha = 0.3;
                     if (isRound) {
                         furnitureGfx.circle(tx, ty + 6, tw/2).fill({ color: 0x000000, alpha: shadowAlpha });
-                        furnitureGfx.circle(tx, ty, tw/2).fill(0x0f172a).stroke({ color: 0x3b82f6, width: 2, alpha: 0.4 }); 
+                        furnitureGfx.circle(tx, ty, tw/2 + 2).fill(0x5C3A21); 
+                        furnitureGfx.circle(tx, ty, tw/2).fill(0xC19A6B); // Original Wood 
                         WALLS.push({x: tx - tw/2, y: ty - tw/2, w: tw, h: tw});
                     } else {
                         furnitureGfx.roundRect(tx, ty + 6, tw, th, 8).fill({ color: 0x000000, alpha: shadowAlpha });
-                        furnitureGfx.roundRect(tx, ty, tw, th, 8).fill(0x0f172a).stroke({ color: 0x3b82f6, width: 2, alpha: 0.4 });
+                        furnitureGfx.roundRect(tx, ty, tw, th, 8).fill(0x5C3A21);
+                        furnitureGfx.roundRect(tx+2, ty+2, tw-4, th-4, 6).fill(0xC19A6B); // Original Wood
                         WALLS.push({x: tx, y: ty, w: tw, h: th});
                     }
                 };
