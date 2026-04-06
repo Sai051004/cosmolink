@@ -64,7 +64,14 @@ function App() {
   
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [activeReaction, setActiveReaction] = useState(null);
+  const [toasts, setToasts] = useState([]);
   
+  const addToast = (msg, type = 'info') => {
+      const id = Date.now() + Math.random();
+      setToasts(prev => [...prev, { id, msg, type }]);
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+  };
+
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [devices, setDevices] = useState({ audioinputs: [], videoinputs: [] });
   const [selectedMic, setSelectedMic] = useState('');
@@ -105,24 +112,19 @@ function App() {
           }
       };
 
-      peer.ontrack = (event) => {
-          const videoReceivers = peer.getReceivers().filter(r => r.track && r.track.kind === 'video');
-          const isScreen = videoReceivers.indexOf(event.receiver) === 1;
+      const updateStreams = () => setRemoteStreams(prev => ({ ...prev }));
+      cameraTransceiver.receiver.track.addEventListener('unmute', updateStreams);
+      cameraTransceiver.receiver.track.addEventListener('mute', updateStreams);
+      screenTransceiver.receiver.track.addEventListener('unmute', updateStreams);
+      screenTransceiver.receiver.track.addEventListener('mute', updateStreams);
 
-          setRemoteStreams(prev => {
-              const current = prev[targetId] || { camera: new MediaStream(), screen: new MediaStream() };
-              const camera = new MediaStream(current.camera.getTracks());
-              const screen = new MediaStream(current.screen.getTracks());
-              
-              if (event.track.kind === 'audio' || !isScreen) {
-                  if (!camera.getTracks().includes(event.track)) camera.addTrack(event.track);
-              } else {
-                  if (!screen.getTracks().includes(event.track)) screen.addTrack(event.track);
-              }
-              
-              return { ...prev, [targetId]: { camera, screen } };
-          });
-      };
+      const cameraStream = new MediaStream([audioTransceiver.receiver.track, cameraTransceiver.receiver.track]);
+      const screenStream = new MediaStream([screenTransceiver.receiver.track]);
+
+      setRemoteStreams(prev => ({
+          ...prev,
+          [targetId]: { camera: cameraStream, screen: screenStream }
+      }));
 
       if (isInitiator) {
            peer.createOffer()
@@ -135,8 +137,17 @@ function App() {
 
   useEffect(() => {
     socket.on('active-users', (users) => setActiveUsers(users));
-    socket.on('user-joined', (user) => setActiveUsers(prev => [...prev.filter(u => u.socketId !== user.socketId), user]));
-    socket.on('user-left', (socketId) => setActiveUsers(prev => prev.filter(u => u.socketId !== socketId)));
+    socket.on('user-joined', (user) => {
+        setActiveUsers(prev => [...prev.filter(u => u.socketId !== user.socketId), user]);
+        addToast(`${user.username} joined campus`, 'info');
+    });
+    socket.on('user-left', (socketId) => {
+        setActiveUsers(prev => {
+            const leftUser = prev.find(u => u.socketId === socketId);
+            if (leftUser) addToast(`${leftUser.username} left campus`);
+            return prev.filter(u => u.socketId !== socketId);
+        });
+    });
     
     socket.on('user-moved', (movedUser) => {
       setActiveUsers(prev => prev.map(u => u.socketId === movedUser.socketId ? { ...u, ...movedUser } : u));
@@ -144,6 +155,7 @@ function App() {
 
     socket.on('proximity_connect', (data) => {
         setActiveChatRoom(data.room);
+        addToast('Connected with a nearby user!', 'success');
         setMessages([{ senderId: 'system', username: 'System', message: 'You have entered a proximity chat area.', isZone: false }]);
     });
 
@@ -408,11 +420,21 @@ function App() {
 
   if (!joined) {
       return (
-          <div className="h-screen w-screen bg-[url('https://images.unsplash.com/photo-1510519138101-570d1dca3d66?ixlib=rb-4.0.3&auto=format&fit=crop&w=2000&q=80')] bg-cover bg-center flex items-center justify-center">
-              <div className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
-              <form onSubmit={handleJoin} className="bg-white/10 backdrop-blur-xl p-10 rounded-3xl shadow-2xl flex flex-col gap-6 w-[400px] border border-white/20 z-10">
+          <div className="h-screen w-screen bg-[#050505] relative flex items-center justify-center overflow-hidden">
+              {/* Animated Blueprint/Grid Background */}
+              <div className="absolute inset-0 z-0 opacity-[0.15]" style={{ backgroundImage: 'linear-gradient(rgba(59, 130, 246, 0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(59, 130, 246, 0.5) 1px, transparent 1px)', backgroundSize: '40px 40px', animation: 'panGrid 20s linear infinite' }}></div>
+              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#050505]/80 to-[#050505] z-0"></div>
+              
+              <style>{`
+                  @keyframes panGrid {
+                      from { background-position: 0 0; }
+                      to { background-position: -40px -40px; }
+                  }
+              `}</style>
+              
+              <form onSubmit={handleJoin} className="bg-[#111]/80 backdrop-blur-xl p-10 rounded-3xl shadow-[0_0_50px_rgba(59,130,246,0.15)] flex flex-col gap-6 w-[400px] border border-blue-500/20 z-10 relative">
                   <div className="text-center">
-                      <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500 mb-2 tracking-tight drop-shadow-sm">CosmoLink</h1>
+                      <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-500 to-blue-400 bg-[length:200%_auto] animate-gradient mb-2 tracking-tight drop-shadow-lg p-1">CosmoLink</h1>
                       <p className="text-gray-300 text-sm">Your virtual academic campus</p>
                   </div>
                   <input 
@@ -508,8 +530,8 @@ function App() {
                     {Object.entries(remoteStreams).map(([peerId, streams]) => {
                         const user = activeUsers.find(u => u.socketId === peerId);
                         
-                        const hasCamera = streams.camera && streams.camera.getVideoTracks().length > 0;
-                        const hasScreen = streams.screen && streams.screen.getVideoTracks().length > 0;
+                        const hasCamera = streams.camera && streams.camera.getVideoTracks()[0] && !streams.camera.getVideoTracks()[0].muted;
+                        const hasScreen = streams.screen && streams.screen.getVideoTracks()[0] && !streams.screen.getVideoTracks()[0].muted;
                         
                         if (!hasCamera && !hasScreen) return null;
 
@@ -561,21 +583,31 @@ function App() {
                     </div>
                 )}
 
+                {/* TOAST SYSTEM */}
+                <div className="absolute top-20 left-1/2 -translate-x-1/2 flex flex-col gap-2 z-[100] pointer-events-none">
+                    {toasts.map(t => (
+                        <div key={t.id} className="animate-fade-in-down bg-[#111]/90 backdrop-blur-md border border-white/10 text-white px-5 py-2.5 rounded-xl shadow-2xl text-sm font-medium flex items-center gap-2">
+                            {t.type === 'success' ? <div className="w-2 h-2 rounded-full bg-green-500"></div> : <div className="w-2 h-2 rounded-full bg-blue-500"></div>}
+                            {t.msg}
+                        </div>
+                    ))}
+                </div>
+
                 {/* BOTTOM TOOLBAR */}
                 <div className="absolute bottom-4 md:bottom-8 left-1/2 -translate-x-1/2 bg-[#111]/90 backdrop-blur-xl border border-gray-700/80 px-2 md:px-4 py-2 md:py-3 rounded-2xl flex items-center justify-center gap-1 md:gap-2 shadow-2xl z-20 w-[95%] md:w-auto max-w-[400px] md:max-w-none overflow-x-auto">
-                    <button onClick={toggleMic} className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-95 shrink-0 ${micOn ? 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 ring-1 ring-blue-500/50' : 'bg-red-500/20 text-red-500 hover:bg-red-500/30'}`}>
+                    <button title="Toggle Microphone" onClick={toggleMic} className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-95 shrink-0 ${micOn ? 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 ring-1 ring-blue-500/50' : 'bg-red-500/20 text-red-500 hover:bg-red-500/30'}`}>
                         {micOn ? <Mic size={18}/> : <MicOff size={18}/>}
                     </button>
-                    <button onClick={toggleCamera} className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-95 shrink-0 ${cameraOn ? 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 ring-1 ring-blue-500/50' : 'bg-red-500/20 text-red-500 hover:bg-red-500/30'}`}>
+                    <button title="Toggle Camera" onClick={toggleCamera} className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-95 shrink-0 ${cameraOn ? 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 ring-1 ring-blue-500/50' : 'bg-red-500/20 text-red-500 hover:bg-red-500/30'}`}>
                         {cameraOn ? <Video size={18}/> : <VideoOff size={18}/>}
                     </button>
-                    <button onClick={toggleScreenShare} className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-95 shrink-0 ${screenShare ? 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 ring-1 ring-blue-500/50' : 'bg-gray-800 hover:bg-gray-700 text-gray-400'}`}>
+                    <button title="Share Screen" onClick={toggleScreenShare} className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-95 shrink-0 ${screenShare ? 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 ring-1 ring-blue-500/50' : 'bg-gray-800 hover:bg-gray-700 text-gray-400'}`}>
                         <MonitorUp size={18}/>
                     </button>
                     <div className="w-px h-6 md:h-8 bg-gray-700/50 mx-1 md:mx-2 shrink-0"></div>
                     
                     <div className="relative shrink-0">
-                        <button onClick={() => setIsEmojiPickerOpen(!isEmojiPickerOpen)} className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-95 ${isEmojiPickerOpen ? 'bg-gray-700 text-white' : 'bg-gray-800 hover:bg-gray-700 text-yellow-500'}`}><Smile size={18}/></button>
+                        <button title="Reactions" onClick={() => setIsEmojiPickerOpen(!isEmojiPickerOpen)} className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-95 ${isEmojiPickerOpen ? 'bg-gray-700 text-white' : 'bg-gray-800 hover:bg-gray-700 text-yellow-500'}`}><Smile size={18}/></button>
                         {isEmojiPickerOpen && (
                             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 bg-gray-800 border border-gray-700 p-2 rounded-xl flex gap-2 shadow-2xl">
                                 {['👍','👏','❤️','😂','😲'].map(em => (
@@ -586,7 +618,7 @@ function App() {
                     </div>
                     
                     <div className="relative shrink-0">
-                        <button onClick={() => { setIsSettingsOpen(!isSettingsOpen); getDevices(); }} className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-95 ${isSettingsOpen ? 'bg-gray-700 text-white' : 'bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white'}`}><Settings size={18}/></button>
+                        <button title="Settings" onClick={() => { setIsSettingsOpen(!isSettingsOpen); getDevices(); }} className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-95 ${isSettingsOpen ? 'bg-gray-700 text-white' : 'bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white'}`}><Settings size={18}/></button>
                         {isSettingsOpen && (
                             <div className="absolute bottom-full right-0 mb-4 bg-[#1a1a1a] border border-gray-700/80 p-4 rounded-2xl w-64 shadow-2xl flex flex-col gap-4 text-left">
                                 <h4 className="font-bold text-white border-b border-gray-800 pb-2">Device Settings</h4>
@@ -631,7 +663,12 @@ function App() {
                             messages={messages} 
                             setMessages={setMessages} 
                             onClose={() => {
-                                socket.emit('leave_room'); 
+                                if (activeChatRoom.includes('-')) {
+                                    setActiveChatRoom(null);
+                                    setMessages([]);
+                                } else {
+                                    socket.emit('leave_room'); 
+                                }
                             }} 
                         />
                     </div>

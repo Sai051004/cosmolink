@@ -33,6 +33,7 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
     const appRef = useRef(null);
     const containerRef = useRef(null);
     const avatarsRef = useRef({});
+    const camRef = useRef({ x: 850, y: 400 });
     
     const [nearbyInteractable, setNearbyInteractable] = useState(null);
     const [isSeated, setIsSeated] = useState(false);
@@ -77,14 +78,40 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
             app.stage.addChild(worldContainer);
 
              const baseMap = new PIXI.Graphics();
+             const starLayer = PIXI.ParticleContainer ? new PIXI.ParticleContainer(500) : new PIXI.Container();
+             const roomGraphics = {};
+             let stars = [];
+
              try {
-                baseMap.rect(0, 0, MAP_WIDTH, MAP_HEIGHT).fill(0x27ae60);
+                baseMap.rect(0, 0, MAP_WIDTH, MAP_HEIGHT).fill(0x0B0C10);
+                const gridSpacing = 100;
+                for(let i=0; i<=MAP_WIDTH; i+=gridSpacing) {
+                     baseMap.moveTo(i, 0).lineTo(i, MAP_HEIGHT).stroke({color: 0x3b82f6, alpha: 0.1, width: 1});
+                }
+                for(let i=0; i<=MAP_HEIGHT; i+=gridSpacing) {
+                     baseMap.moveTo(0, i).lineTo(MAP_WIDTH, i).stroke({color: 0x3b82f6, alpha: 0.1, width: 1});
+                }
+                
                 baseMap.zIndex = 0;
                 baseMap.eventMode = 'static';
                 worldContainer.addChild(baseMap);
 
+                starLayer.zIndex = 0;
+                for(let i=0; i<300; i++) {
+                    const star = new PIXI.Graphics();
+                    const size = Math.random() * 2;
+                    star.circle(0, 0, size).fill({color: 0xffffff, alpha: Math.random() * 0.5 + 0.1});
+                    star.x = Math.random() * MAP_WIDTH;
+                    star.y = Math.random() * MAP_HEIGHT;
+                    star.speedX = (Math.random() - 0.5) * 0.5;
+                    star.speedY = (Math.random() - 0.5) * 0.5;
+                    starLayer.addChild(star);
+                    stars.push(star);
+                }
+                worldContainer.addChild(starLayer);
+
                 const floor = new PIXI.Graphics();
-                floor.rect(50, 50, MAP_WIDTH - 100, MAP_HEIGHT - 100).fill(0xEEDCAE); 
+                floor.rect(50, 50, MAP_WIDTH - 100, MAP_HEIGHT - 100).fill(0x131722); 
                 floor.zIndex = 0;
                 floor.eventMode = 'static';
                 worldContainer.addChild(floor);
@@ -98,14 +125,23 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
                 floor.on('pointerdown', handleMapClick);
 
                 const roomGfx = new PIXI.Graphics();
-                roomGfx.zIndex = 1;
+                const roomContainer = new PIXI.Container();
+                roomContainer.zIndex = 1;
+                worldContainer.addChild(roomContainer);
+                
                 const wallThick = 40;
                 const doorSize = 140;
 
                 WALLS.length = 4;
 
                 STRUCTURAL_ROOMS.forEach(rm => {
-                    roomGfx.rect(rm.x, rm.y, rm.w, rm.h).fill({ color: rm.color, alpha: 0.15 });
+                    const g = new PIXI.Graphics();
+                    g.rect(rm.x, rm.y, rm.w, rm.h)
+                     .fill({ color: rm.color, alpha: 1 })
+                     .stroke({ color: rm.color, alpha: 1, width: 3 });
+                    g.alpha = 0.05;
+                    roomGraphics[rm.name] = g;
+                    roomContainer.addChild(g);
                     
                     let doorSide = rm.x < 1000 ? 'right' : 'left';
                     /* Top Wall */  WALLS.push({ x: rm.x, y: rm.y, w: rm.w, h: wallThick }); 
@@ -125,46 +161,43 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
                         text: rm.name,
                         style: { fontFamily: 'ui-sans-serif, sans-serif', fontSize: 26, fill: 0xffffff, fontWeight: '900', letterSpacing: 2 }
                     });
-                    text.zIndex = 4;
                     if (text.anchor) text.anchor.set(0.5, 0); 
                     text.x = rm.x + rm.w/2;
                     text.y = rm.y + 8;
                     text.alpha = 0.85;
-                    worldContainer.addChild(text);
+                    roomContainer.addChild(text);
                 });
 
                 for (let w of WALLS) {
-                    roomGfx.rect(w.x, w.y, w.w, w.h).fill(0x2d3748); 
+                    roomGfx.rect(w.x, w.y, w.w, w.h).fill(0x1e293b); 
                 }
 
-                worldContainer.addChild(roomGfx);
+                roomContainer.addChild(roomGfx);
 
                 const furnitureGfx = new PIXI.Graphics();
                 furnitureGfx.zIndex = 2;
                 
                 const drawChair = (cx, cy, dir) => {
-                    const color = 0x2A2A2A;
-                    furnitureGfx.roundRect(cx - 15, cy - 15, 30, 30, 5).fill(color);
+                    const color = 0x1e293b;
+                    furnitureGfx.roundRect(cx - 15, cy - 15, 30, 30, 5).fill(color).stroke({ color: 0x3b82f6, width: 1, alpha: 0.5 });
                     furnitureGfx.roundRect(
                         dir === 'up' || dir === 'down' ? cx - 12 : (dir === 'left' ? cx - 18 : cx + 12),
                         dir === 'left' || dir === 'right' ? cy - 12 : (dir === 'up' ? cy - 18 : cy + 12),
                         dir === 'up' || dir === 'down' ? 24 : 6,
                         dir === 'left' || dir === 'right' ? 24 : 6,
                         2
-                    ).fill(0x111111);
+                    ).fill(0x0f172a);
                 };
 
                 const drawTable = (tx, ty, tw, th, isRound = false) => {
-                    const shadowAlpha = 0.4;
+                    const shadowAlpha = 0.2;
                     if (isRound) {
                         furnitureGfx.circle(tx, ty + 6, tw/2).fill({ color: 0x000000, alpha: shadowAlpha });
-                        furnitureGfx.circle(tx, ty, tw/2 + 2).fill(0x5C3A21); 
-                        furnitureGfx.circle(tx, ty, tw/2).fill(0xC19A6B); 
+                        furnitureGfx.circle(tx, ty, tw/2).fill(0x0f172a).stroke({ color: 0x3b82f6, width: 2, alpha: 0.4 }); 
                         WALLS.push({x: tx - tw/2, y: ty - tw/2, w: tw, h: tw});
                     } else {
                         furnitureGfx.roundRect(tx, ty + 6, tw, th, 8).fill({ color: 0x000000, alpha: shadowAlpha });
-                        furnitureGfx.roundRect(tx, ty, tw, th, 8).fill(0x5C3A21);
-                        furnitureGfx.roundRect(tx+2, ty+2, tw-4, th-4, 6).fill(0xC19A6B);
+                        furnitureGfx.roundRect(tx, ty, tw, th, 8).fill(0x0f172a).stroke({ color: 0x3b82f6, width: 2, alpha: 0.4 });
                         WALLS.push({x: tx, y: ty, w: tw, h: th});
                     }
                 };
@@ -269,13 +302,30 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
                 return false;
             }
 
+            let startTick = Date.now();
             movementInterval = setInterval(() => {
+                const tick = (Date.now() - startTick) / 1000;
+                
+                stars.forEach(s => {
+                    s.x += s.speedX;
+                    s.y += s.speedY;
+                    if (s.x < 0) s.x = MAP_WIDTH;
+                    if (s.x > MAP_WIDTH) s.x = 0;
+                    if (s.y < 0) s.y = MAP_HEIGHT;
+                    if (s.y > MAP_HEIGHT) s.y = 0;
+                });
+
                 if (!avatarsRef.current['__internal_me__']) return;
                 const myState = avatarsRef.current['__internal_me__'];
                 
+                const cam = camRef.current;
+                const LERP_SPEED = 0.12;
+                cam.x += (myState.x - cam.x) * LERP_SPEED;
+                cam.y += (myState.y - cam.y) * LERP_SPEED;
+
                 const wScale = worldContainer.scale.x;
-                worldContainer.x = (window.innerWidth / 2) - (myState.x * wScale);
-                worldContainer.y = (window.innerHeight / 2) - (myState.y * wScale);
+                worldContainer.x = (window.innerWidth / 2) - (cam.x * wScale);
+                worldContainer.y = (window.innerHeight / 2) - (cam.y * wScale);
 
                 let currentRoomCheck = null;
                 for (let rm of STRUCTURAL_ROOMS) {
@@ -285,6 +335,16 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
                         break;
                     }
                 }
+                
+                for (let rName in roomGraphics) {
+                    const g = roomGraphics[rName];
+                    const targetAlpha = rName === currentRoomCheck ? 0.3 : 0.05;
+                    g.alpha += (targetAlpha - g.alpha) * 0.1;
+                }
+
+                Object.values(avatarsRef.current).forEach(avatar => {
+                    if(avatar && avatar.scale) avatar.scale.y = 1.0 + Math.sin(tick * 4) * 0.03;
+                });
 
                 if (currentRoomCheck !== window.__currentRoom) {
                     if (currentRoomCheck) {
