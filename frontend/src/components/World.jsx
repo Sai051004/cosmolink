@@ -80,12 +80,22 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
              try {
                 baseMap.rect(0, 0, MAP_WIDTH, MAP_HEIGHT).fill(0x27ae60);
                 baseMap.zIndex = 0;
+                baseMap.eventMode = 'static';
                 worldContainer.addChild(baseMap);
 
                 const floor = new PIXI.Graphics();
                 floor.rect(50, 50, MAP_WIDTH - 100, MAP_HEIGHT - 100).fill(0xEEDCAE); 
                 floor.zIndex = 0;
+                floor.eventMode = 'static';
                 worldContainer.addChild(floor);
+
+                const handleMapClick = (e) => {
+                    const localPt = worldContainer.worldTransform.applyInverse(e.global);
+                    window.__autoWalkTarget = { x: localPt.x, y: localPt.y };
+                };
+                
+                baseMap.on('pointerdown', handleMapClick);
+                floor.on('pointerdown', handleMapClick);
 
                 const roomGfx = new PIXI.Graphics();
                 roomGfx.zIndex = 1;

@@ -3,7 +3,7 @@ import { socket } from './utils/socket';
 import World from './components/World';
 import ChatPanel from './components/ChatPanel';
 import { STRUCTURAL_ROOMS } from './components/World';
-import { Mic, MicOff, Video, VideoOff, MonitorUp, Smile, Map as MapIcon, LogOut, ZoomIn, ZoomOut, Settings } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, MonitorUp, Smile, Map as MapIcon, LogOut, ZoomIn, ZoomOut, Settings, Menu, X } from 'lucide-react';
 
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null }; }
@@ -31,7 +31,7 @@ const VideoPlayer = ({ stream }) => {
             ref.current.play().catch(e => console.error("Video remote play error:", e));
         }
     }, [stream]);
-    return <video ref={ref} autoPlay playsInline className="w-full h-full object-cover transform -scale-x-100 rounded-xl"></video>;
+    return <video ref={ref} autoPlay playsInline className="w-full h-full object-contain rounded-xl"></video>;
 };
 
 function App() {
@@ -51,6 +51,8 @@ function App() {
   const [micOn, setMicOn] = useState(false);
   const [cameraOn, setCameraOn] = useState(false);
   const [screenShare, setScreenShare] = useState(false);
+  const [enlargedStream, setEnlargedStream] = useState(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const localStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
@@ -82,15 +84,19 @@ function App() {
       const peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
       peersRef.current.set(targetId, peer);
 
+      const audioTransceiver = peer.addTransceiver('audio', { direction: 'sendrecv' });
+      const cameraTransceiver = peer.addTransceiver('video', { direction: 'sendrecv' });
+      const screenTransceiver = peer.addTransceiver('video', { direction: 'sendrecv' });
+
       if (localStreamRef.current) {
-          localStreamRef.current.getTracks().forEach(track => {
-              peer.addTrack(track, localStreamRef.current);
-          });
+          const audioTrack = localStreamRef.current.getAudioTracks()[0];
+          const videoTrack = localStreamRef.current.getVideoTracks()[0];
+          if (audioTrack) audioTransceiver.sender.replaceTrack(audioTrack);
+          if (videoTrack) cameraTransceiver.sender.replaceTrack(videoTrack);
       }
       if (screenStreamRef.current) {
-          screenStreamRef.current.getTracks().forEach(track => {
-              peer.addTrack(track, screenStreamRef.current);
-          });
+          const screenTrack = screenStreamRef.current.getVideoTracks()[0];
+          if (screenTrack) screenTransceiver.sender.replaceTrack(screenTrack);
       }
 
       peer.onicecandidate = (event) => {
@@ -100,10 +106,22 @@ function App() {
       };
 
       peer.ontrack = (event) => {
-          setRemoteStreams(prev => ({
-              ...prev,
-              [targetId]: event.streams[0]
-          }));
+          const videoReceivers = peer.getReceivers().filter(r => r.track && r.track.kind === 'video');
+          const isScreen = videoReceivers.indexOf(event.receiver) === 1;
+
+          setRemoteStreams(prev => {
+              const current = prev[targetId] || { camera: new MediaStream(), screen: new MediaStream() };
+              const camera = new MediaStream(current.camera.getTracks());
+              const screen = new MediaStream(current.screen.getTracks());
+              
+              if (event.track.kind === 'audio' || !isScreen) {
+                  if (!camera.getTracks().includes(event.track)) camera.addTrack(event.track);
+              } else {
+                  if (!screen.getTracks().includes(event.track)) screen.addTrack(event.track);
+              }
+              
+              return { ...prev, [targetId]: { camera, screen } };
+          });
       };
 
       if (isInitiator) {
@@ -253,7 +271,7 @@ function App() {
       if (cameraOn && localVideoRef.current && localStreamRef.current) {
           localVideoRef.current.srcObject = localStreamRef.current;
       }
-  }, [cameraOn]);
+  }, [cameraOn, joined]);
 
   const toggleMic = async () => {
       if (localStreamRef.current) {
@@ -270,7 +288,9 @@ function App() {
           const newTrack = stream.getAudioTracks()[0];
           localStreamRef.current.addTrack(newTrack);
           peersRef.current.forEach((peer) => {
-              peer.addTrack(newTrack, localStreamRef.current);
+              const audioTransceivers = peer.getTransceivers().filter(t => t.receiver && t.receiver.track && t.receiver.track.kind === 'audio');
+              const audioTransceiver = audioTransceivers[0];
+              if (audioTransceiver) audioTransceiver.sender.replaceTrack(newTrack);
           });
           setMicOn(true);
       } catch (e) {
@@ -295,7 +315,9 @@ function App() {
           const newTrack = stream.getVideoTracks()[0];
           localStreamRef.current.addTrack(newTrack);
           peersRef.current.forEach((peer) => {
-              peer.addTrack(newTrack, localStreamRef.current);
+              const videoTransceivers = peer.getTransceivers().filter(t => t.receiver && t.receiver.track && t.receiver.track.kind === 'video');
+              const cameraTransceiver = videoTransceivers[0];
+              if (cameraTransceiver) cameraTransceiver.sender.replaceTrack(newTrack);
           });
           setCameraOn(true);
       } catch (e) {
@@ -309,13 +331,11 @@ function App() {
           screenStreamRef.current?.getTracks().forEach(t => t.stop());
           screenStreamRef.current = null;
           setScreenShare(false);
-          if (localStreamRef.current) {
-              const videoTrack = localStreamRef.current.getVideoTracks()[0];
-              peersRef.current.forEach(peer => {
-                  const sender = peer.getSenders().find(s => s.track && s.track.kind === 'video');
-                  if (sender && videoTrack) sender.replaceTrack(videoTrack);
-              });
-          }
+          peersRef.current.forEach(peer => {
+              const videoTransceivers = peer.getTransceivers().filter(t => t.receiver && t.receiver.track && t.receiver.track.kind === 'video');
+              const screenTransceiver = videoTransceivers[1];
+              if (screenTransceiver) screenTransceiver.sender.replaceTrack(null);
+          });
           return;
       }
       try {
@@ -325,8 +345,9 @@ function App() {
           
           const screenTrack = stream.getVideoTracks()[0];
           peersRef.current.forEach(peer => {
-              const sender = peer.getSenders().find(s => s.track && s.track.kind === 'video');
-              if (sender) sender.replaceTrack(screenTrack);
+              const videoTransceivers = peer.getTransceivers().filter(t => t.receiver && t.receiver.track && t.receiver.track.kind === 'video');
+              const screenTransceiver = videoTransceivers[1];
+              if (screenTransceiver) screenTransceiver.sender.replaceTrack(screenTrack);
           });
 
           screenTrack.onended = () => {
@@ -415,10 +436,20 @@ function App() {
     <ErrorBoundary>
     <div className="h-screen w-screen bg-[#0a0a0a] overflow-hidden flex flex-col text-sm text-gray-200">
         {/* TOP BAR */}
-        <div className="h-14 bg-[#111] border-b border-gray-800/80 flex items-center justify-between px-6 z-20 shadow-md">
-            <div className="font-extrabold text-xl text-white tracking-tight flex items-center gap-2">
-                <div className="w-5 h-5 rounded bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg"></div>
-                CosmoLink
+        <div className="h-14 bg-[#111] border-b border-gray-800/80 flex items-center justify-between px-4 md:px-6 z-30 shadow-md relative">
+            <div className="flex items-center gap-3">
+                {joined && (
+                    <button 
+                       onClick={() => setIsSidebarOpen(!isSidebarOpen)} 
+                       className="md:hidden bg-gray-800 hover:bg-gray-700 p-1.5 rounded-lg text-white"
+                    >
+                       {isSidebarOpen ? <X size={18}/> : <Menu size={18}/>}
+                    </button>
+                )}
+                <div className="font-extrabold text-lg md:text-xl text-white tracking-tight flex items-center gap-2">
+                    <div className="w-4 h-4 md:w-5 md:h-5 rounded bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg"></div>
+                    CosmoLink
+                </div>
             </div>
             <div className="flex items-center gap-3">
                 <button onClick={() => { navigator.clipboard.writeText(window.location.href); alert('Invite link copied to clipboard!'); }} className="bg-gray-800 hover:bg-gray-700 px-4 py-1.5 rounded-lg text-sm transition-colors font-medium border border-gray-700">Invite</button>
@@ -430,7 +461,7 @@ function App() {
 
         <div className="flex-1 flex overflow-hidden relative">
             {/* LEFT SIDEBAR */}
-            <div className="w-64 bg-[#111]/95 border-r border-gray-800/80 flex flex-col z-20 backdrop-blur-md">
+            <div className={`absolute md:relative top-0 bottom-0 left-0 w-64 bg-[#111]/95 border-r border-gray-800/80 flex flex-col z-30 backdrop-blur-md transform transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
                 <div className="p-5 border-b border-gray-800/80">
                     <h3 className="text-gray-500 text-[10px] font-bold tracking-widest uppercase mb-3 px-1">Participants ({activeUsers.length})</h3>
                     <div className="flex flex-col gap-3 max-h-[30vh] overflow-y-auto pr-2 scrollbar-thin">
@@ -474,27 +505,51 @@ function App() {
                 
                 {/* REMOTE PEER STREAMS */}
                 <div className="absolute top-14 left-1/2 -translate-x-1/2 flex gap-4 z-40 pointer-events-none">
-                    {Object.entries(remoteStreams).map(([peerId, stream]) => {
+                    {Object.entries(remoteStreams).map(([peerId, streams]) => {
                         const user = activeUsers.find(u => u.socketId === peerId);
+                        
+                        const hasCamera = streams.camera && streams.camera.getVideoTracks().length > 0;
+                        const hasScreen = streams.screen && streams.screen.getVideoTracks().length > 0;
+                        
+                        if (!hasCamera && !hasScreen) return null;
+
                         return (
-                            <div key={peerId} className="w-48 h-32 bg-black rounded-xl overflow-hidden shadow-2xl border border-gray-700/50 relative pointer-events-auto">
-                                <VideoPlayer stream={stream} />
-                                <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-0.5 rounded text-[10px] font-bold text-white backdrop-blur-sm truncate max-w-[90%]">
-                                    {user ? user.username : '...'}
-                                </div>
+                            <div key={peerId} className="flex gap-2 relative pointer-events-auto shrink-0 transition-all">
+                                {hasCamera && (
+                                    <div 
+                                        onClick={() => setEnlargedStream({ type: 'camera', id: peerId, username: user ? user.username : '...' })}
+                                        className="w-24 md:w-48 h-16 md:h-32 bg-black rounded-xl overflow-hidden shadow-2xl border border-gray-700/50 relative cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all hover:scale-105 shrink-0"
+                                    >
+                                        <VideoPlayer stream={streams.camera} />
+                                        <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-0.5 rounded text-[10px] font-bold text-white backdrop-blur-sm truncate max-w-[90%] pointer-events-none">
+                                            {user ? user.username : '...'}
+                                        </div>
+                                    </div>
+                                )}
+                                {hasScreen && (
+                                    <div 
+                                        onClick={() => setEnlargedStream({ type: 'screen', id: peerId, username: user ? user.username : '...' })}
+                                        className="w-32 md:w-64 h-20 md:h-40 bg-black rounded-xl overflow-hidden shadow-2xl border border-blue-500/50 relative cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all hover:scale-105 shrink-0"
+                                    >
+                                        <VideoPlayer stream={streams.screen} />
+                                        <div className="absolute bottom-2 left-2 bg-blue-600/90 px-2 py-0.5 rounded text-[10px] font-bold text-white backdrop-blur-sm truncate max-w-[90%] pointer-events-none">
+                                            {user ? user.username : '...'} (Screen)
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         );
                     })}
                 </div>
 
                 {/* FLOATING ZOOM CONTROLS */}
-                <div className="absolute right-6 top-6 flex flex-col gap-2 z-20">
-                    <button onClick={() => setZoomLevel(z => Math.min(2.5, z + 0.25))} className="bg-[#111]/80 p-2.5 rounded-xl text-gray-300 hover:text-white hover:bg-gray-800 backdrop-blur-md border border-gray-700/80 shadow-2xl transition-all hover:scale-105 active:scale-95"><ZoomIn size={18}/></button>
-                    <button onClick={() => setZoomLevel(z => Math.max(0.25, z - 0.25))} className="bg-[#111]/80 p-2.5 rounded-xl text-gray-300 hover:text-white hover:bg-gray-800 backdrop-blur-md border border-gray-700/80 shadow-2xl transition-all hover:scale-105 active:scale-95"><ZoomOut size={18}/></button>
+                <div className="absolute right-4 md:right-6 top-6 flex flex-col gap-2 z-20">
+                    <button onClick={() => setZoomLevel(z => Math.min(2.5, z + 0.25))} className="bg-[#111]/80 p-2 md:p-2.5 rounded-xl text-gray-300 hover:text-white hover:bg-gray-800 backdrop-blur-md border border-gray-700/80 shadow-2xl transition-all hover:scale-105 active:scale-95"><ZoomIn size={16}/></button>
+                    <button onClick={() => setZoomLevel(z => Math.max(0.25, z - 0.25))} className="bg-[#111]/80 p-2 md:p-2.5 rounded-xl text-gray-300 hover:text-white hover:bg-gray-800 backdrop-blur-md border border-gray-700/80 shadow-2xl transition-all hover:scale-105 active:scale-95"><ZoomOut size={16}/></button>
                 </div>
 
                 {cameraOn && (
-                    <div className="absolute bottom-28 left-6 w-48 h-32 bg-black rounded-xl overflow-hidden shadow-2xl border border-gray-700/50 z-30 transition-all duration-300">
+                    <div className="absolute bottom-20 md:bottom-28 left-4 md:left-6 w-32 md:w-48 h-24 md:h-32 bg-black rounded-xl overflow-hidden shadow-2xl border border-gray-700/50 z-30 transition-all duration-300">
                         <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover transform -scale-x-100"></video>
                         <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-0.5 rounded text-[10px] font-bold text-white backdrop-blur-sm">You</div>
                     </div>
@@ -507,20 +562,20 @@ function App() {
                 )}
 
                 {/* BOTTOM TOOLBAR */}
-                <div className="absolute bottom-8 left-1/2 -translate-x-1/2 bg-[#111]/90 backdrop-blur-xl border border-gray-700/80 px-4 py-3 rounded-2xl flex items-center gap-2 shadow-2xl z-20">
-                    <button onClick={toggleMic} className={`p-3 rounded-xl transition-all shadow-sm active:scale-95 ${micOn ? 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 ring-1 ring-blue-500/50' : 'bg-red-500/20 text-red-500 hover:bg-red-500/30'}`}>
-                        {micOn ? <Mic size={20}/> : <MicOff size={20}/>}
+                <div className="absolute bottom-4 md:bottom-8 left-1/2 -translate-x-1/2 bg-[#111]/90 backdrop-blur-xl border border-gray-700/80 px-2 md:px-4 py-2 md:py-3 rounded-2xl flex items-center justify-center gap-1 md:gap-2 shadow-2xl z-20 w-[95%] md:w-auto max-w-[400px] md:max-w-none overflow-x-auto">
+                    <button onClick={toggleMic} className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-95 shrink-0 ${micOn ? 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 ring-1 ring-blue-500/50' : 'bg-red-500/20 text-red-500 hover:bg-red-500/30'}`}>
+                        {micOn ? <Mic size={18}/> : <MicOff size={18}/>}
                     </button>
-                    <button onClick={toggleCamera} className={`p-3 rounded-xl transition-all shadow-sm active:scale-95 ${cameraOn ? 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 ring-1 ring-blue-500/50' : 'bg-red-500/20 text-red-500 hover:bg-red-500/30'}`}>
-                        {cameraOn ? <Video size={20}/> : <VideoOff size={20}/>}
+                    <button onClick={toggleCamera} className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-95 shrink-0 ${cameraOn ? 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 ring-1 ring-blue-500/50' : 'bg-red-500/20 text-red-500 hover:bg-red-500/30'}`}>
+                        {cameraOn ? <Video size={18}/> : <VideoOff size={18}/>}
                     </button>
-                    <button onClick={toggleScreenShare} className={`p-3 rounded-xl transition-all shadow-sm active:scale-95 ${screenShare ? 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 ring-1 ring-blue-500/50' : 'bg-gray-800 hover:bg-gray-700 text-gray-400'}`}>
-                        <MonitorUp size={20}/>
+                    <button onClick={toggleScreenShare} className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-95 shrink-0 ${screenShare ? 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 ring-1 ring-blue-500/50' : 'bg-gray-800 hover:bg-gray-700 text-gray-400'}`}>
+                        <MonitorUp size={18}/>
                     </button>
-                    <div className="w-px h-8 bg-gray-700/50 mx-2"></div>
+                    <div className="w-px h-6 md:h-8 bg-gray-700/50 mx-1 md:mx-2 shrink-0"></div>
                     
-                    <div className="relative">
-                        <button onClick={() => setIsEmojiPickerOpen(!isEmojiPickerOpen)} className={`p-3 rounded-xl transition-all shadow-sm active:scale-95 ${isEmojiPickerOpen ? 'bg-gray-700 text-white' : 'bg-gray-800 hover:bg-gray-700 text-yellow-500'}`}><Smile size={20}/></button>
+                    <div className="relative shrink-0">
+                        <button onClick={() => setIsEmojiPickerOpen(!isEmojiPickerOpen)} className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-95 ${isEmojiPickerOpen ? 'bg-gray-700 text-white' : 'bg-gray-800 hover:bg-gray-700 text-yellow-500'}`}><Smile size={18}/></button>
                         {isEmojiPickerOpen && (
                             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 bg-gray-800 border border-gray-700 p-2 rounded-xl flex gap-2 shadow-2xl">
                                 {['👍','👏','❤️','😂','😲'].map(em => (
@@ -530,8 +585,8 @@ function App() {
                         )}
                     </div>
                     
-                    <div className="relative">
-                        <button onClick={() => { setIsSettingsOpen(!isSettingsOpen); getDevices(); }} className={`p-3 rounded-xl transition-all shadow-sm active:scale-95 ${isSettingsOpen ? 'bg-gray-700 text-white' : 'bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white'}`}><Settings size={20}/></button>
+                    <div className="relative shrink-0">
+                        <button onClick={() => { setIsSettingsOpen(!isSettingsOpen); getDevices(); }} className={`p-2 md:p-3 rounded-xl transition-all shadow-sm active:scale-95 ${isSettingsOpen ? 'bg-gray-700 text-white' : 'bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white'}`}><Settings size={18}/></button>
                         {isSettingsOpen && (
                             <div className="absolute bottom-full right-0 mb-4 bg-[#1a1a1a] border border-gray-700/80 p-4 rounded-2xl w-64 shadow-2xl flex flex-col gap-4 text-left">
                                 <h4 className="font-bold text-white border-b border-gray-800 pb-2">Device Settings</h4>
@@ -554,9 +609,23 @@ function App() {
                     </div>
                 </div>
 
+                {enlargedStream && remoteStreams[enlargedStream.id] && remoteStreams[enlargedStream.id][enlargedStream.type] && (
+                    <div className="absolute inset-0 bg-black/80 z-[100] flex items-center justify-center p-8 backdrop-blur-sm" onClick={() => setEnlargedStream(null)}>
+                        <div className="w-full max-w-5xl aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl relative border border-gray-700/50 pointer-events-auto" onClick={e => e.stopPropagation()}>
+                            <VideoPlayer stream={remoteStreams[enlargedStream.id][enlargedStream.type]} />
+                            <div className="absolute bottom-4 left-4 bg-black/60 px-4 py-2 rounded-lg text-sm font-bold text-white backdrop-blur-sm shadow-xl">
+                                {enlargedStream.username} {enlargedStream.type === 'screen' ? '(Screen)' : ''}
+                            </div>
+                            <button onClick={() => setEnlargedStream(null)} className="absolute top-4 right-4 bg-black/50 hover:bg-black/80 text-white w-10 h-10 rounded-full flex items-center justify-center backdrop-blur-sm transition-all border border-white/10 hover:border-white/30 font-bold hover:scale-105 active:scale-95 shadow-xl pointer-events-auto">
+                                ✕
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                  {/* FLOATING CHAT PANEL */}
                 {activeChatRoom && (
-                    <div className="absolute top-14 right-0 bottom-0 z-50">
+                    <div className="absolute top-14 right-0 bottom-0 z-50 w-full md:w-auto">
                         <ChatPanel 
                             room={activeChatRoom} 
                             messages={messages} 
