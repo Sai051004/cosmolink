@@ -5,69 +5,27 @@ import { socket } from '../utils/socket';
 const MAP_WIDTH = 3200;
 const MAP_HEIGHT = 3200;
 
-const WALLS = [
-    // Bounding Box
+export const STRUCTURAL_ROOMS = [
+    { name: 'MERN STACK', x: 200, y: 100, w: 400, h: 300, color: 0x3b82f6 },
+    { name: 'UI/UX', x: 200, y: 450, w: 400, h: 300, color: 0x8b5cf6 },
+    { name: 'Ethical Hacking', x: 200, y: 800, w: 400, h: 300, color: 0xef4444 },
+    { name: 'DSA', x: 200, y: 1150, w: 400, h: 300, color: 0x10b981 },
+    { name: 'Flutter', x: 200, y: 1500, w: 400, h: 300, color: 0xf59e0b },
+    { name: 'Data Analytics', x: 200, y: 1850, w: 400, h: 300, color: 0x3b82f6 },
+    { name: 'Python', x: 200, y: 2200, w: 400, h: 300, color: 0x8b5cf6 },
+    { name: 'Dev Club Stage', x: 2000, y: 200, w: 900, h: 700, color: 0xf59e0b },
+    { name: 'Gaming Arena', x: 2000, y: 1000, w: 900, h: 500, color: 0xec4899 },
+    { name: 'Task Desks', x: 2000, y: 1600, w: 900, h: 400, color: 0x10b981 },
+    { name: 'Cafeteria', x: 1000, y: 2400, w: 800, h: 600, color: 0x6366f1 },
+    { name: 'Discussion Room 1', x: 2200, y: 2200, w: 600, h: 300, color: 0xef4444 },
+    { name: 'Discussion Room 2', x: 2200, y: 2600, w: 600, h: 300, color: 0x8b5cf6 },
+];
+
+let WALLS = [
     { x: 0, y: 0, w: MAP_WIDTH, h: 20 },
     { x: 0, y: 0, w: 20, h: MAP_HEIGHT },
     { x: MAP_WIDTH - 20, y: 0, w: 20, h: MAP_HEIGHT },
     { x: 0, y: MAP_HEIGHT - 20, w: MAP_WIDTH, h: 20 },
-
-    // Left Side (Learning Rooms Corridor Wall)
-    { x: 600, y: 0, w: 20, h: 600 },
-    { x: 600, y: 800, w: 20, h: MAP_HEIGHT - 800 },
-
-    // Room Dividers Left Side
-    { x: 0, y: 300, w: 600, h: 10 },
-    { x: 0, y: 600, w: 600, h: 10 },
-    { x: 0, y: 900, w: 600, h: 10 },
-    { x: 0, y: 1200, w: 600, h: 10 },
-    { x: 0, y: 1500, w: 600, h: 10 },
-
-    // Right Side (Event Hall Corridor Wall)
-    { x: 1800, y: 0, w: 20, h: 1200 },
-    { x: 1800, y: 1400, w: 20, h: MAP_HEIGHT - 1400 },
-];
-
-const ROOM_LABELS = [
-    { text: "MERN STACK", x: 300, y: 150 },
-    { text: "UI/UX", x: 300, y: 450 },
-    { text: "Ethical Hacking", x: 300, y: 750 },
-    { text: "DSA", x: 300, y: 1050 },
-    { text: "Flutter", x: 300, y: 1350 },
-    { text: "Data Analytics", x: 300, y: 1650 },
-    { text: "Python", x: 300, y: 1850 },
-
-    { text: "Event Hall", x: 2150, y: 150 },
-    { text: "Dev Club Stage", x: 2150, y: 600 },
-    { text: "Gaming Arena", x: 2150, y: 1100 },
-    { text: "Task Desks", x: 2150, y: 1700 },
-
-    { text: "Cafeteria", x: 1200, y: 2400 },
-    { text: "Discussion Room 1", x: 2150, y: 2200 },
-    { text: "Discussion Room 2", x: 2150, y: 2700 },
-];
-
-const INTERACTABLES = [
-    { id: 1, x: 200, y: 150, radius: 40, room: "MERN Stack - Table A" },
-    { id: 2, x: 400, y: 150, radius: 40, room: "MERN Stack - Table B" },
-    { id: 3, x: 200, y: 450, radius: 40, room: "UI/UX - Design Pod" },
-    { id: 4, x: 400, y: 450, radius: 40, room: "UI/UX - Research Pod" },
-    { id: 5, x: 2000, y: 700, radius: 30, room: "Dev Club - Row 1" },
-    { id: 6, x: 2100, y: 700, radius: 30, room: "Dev Club - Row 1" },
-    { id: 7, x: 2200, y: 700, radius: 30, room: "Dev Club - Row 1" },
-    { id: 8, x: 2300, y: 700, radius: 30, room: "Dev Club - Row 1" },
-    { id: 9, x: 2000, y: 800, radius: 30, room: "Dev Club - Row 2" },
-    { id: 10, x: 2100, y: 800, radius: 30, room: "Dev Club - Row 2" },
-    { id: 11, x: 2200, y: 800, radius: 30, room: "Dev Club - Row 2" },
-    { id: 12, x: 2300, y: 800, radius: 30, room: "Dev Club - Row 2" },
-    { id: 13, x: 2000, y: 1600, radius: 30, room: "Task A1" },
-    { id: 14, x: 2100, y: 1600, radius: 30, room: "Task A2" },
-    { id: 15, x: 2200, y: 1600, radius: 30, room: "Task A3" },
-    { id: 16, x: 1000, y: 2300, radius: 40, room: "Cafeteria - Table 1" },
-    { id: 17, x: 1400, y: 2300, radius: 40, room: "Cafeteria - Table 2" },
-    { id: 18, x: 1200, y: 2600, radius: 40, room: "Cafeteria - Table 3" },
-    { id: 19, x: 2150, y: 2300, radius: 50, room: "Discussion Room 1" },
-    { id: 20, x: 2150, y: 2800, radius: 50, room: "Discussion Room 2" },
 ];
 
 export default function World({ myUser, activeUsers, onMyMovement, globalZoom }) {
@@ -90,24 +48,8 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
 
         const handleKeyDown = (e) => { 
             if (keys[e.key] !== undefined) keys[e.key] = true; 
-            
-            if ((e.key === 'x' || e.key === 'X') && !window.__isSeated) {
-                if (window.__nearbySeat) {
-                     setIsSeated(true);
-                     avatarsRef.current['__internal_me__'].x = window.__nearbySeat.x;
-                     avatarsRef.current['__internal_me__'].y = window.__nearbySeat.y;
-                     onMyMovement(window.__nearbySeat.x, window.__nearbySeat.y);
-                     socket.emit('join_room', { roomName: window.__nearbySeat.room, isSeated: true });
-                }
-            } else if ((keys.w || keys.a || keys.s || keys.d || keys.ArrowUp || keys.ArrowLeft || keys.ArrowDown || keys.ArrowRight) && window.__isSeated) {
-                 window.__isSeated = false;
-                 setIsSeated(false);
-                 socket.emit('leave_room');
-            }
         };
         const handleKeyUp = (e) => { if (keys[e.key] !== undefined) keys[e.key] = false; };
-        
-        window.__isSeated = isSeated;
 
         const initPixi = async () => {
             app = new PIXI.Application();
@@ -124,11 +66,12 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
             }
             appRef.current = app;
 
-            if (canvasRef.current) {
+            if (canvasRef.current && !canvasRef.current.hasChildNodes()) {
                 canvasRef.current.appendChild(app.canvas);
             }
 
             const worldContainer = new PIXI.Container();
+            worldContainer.sortableChildren = true;
             containerRef.current = worldContainer;
             worldContainer.scale.set(globalZoom);
             app.stage.addChild(worldContainer);
@@ -136,85 +79,167 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
              const baseMap = new PIXI.Graphics();
              try {
                 baseMap.rect(0, 0, MAP_WIDTH, MAP_HEIGHT).fill(0x27ae60);
+                baseMap.zIndex = 0;
                 worldContainer.addChild(baseMap);
 
                 const floor = new PIXI.Graphics();
                 floor.rect(50, 50, MAP_WIDTH - 100, MAP_HEIGHT - 100).fill(0xEEDCAE); 
+                floor.zIndex = 0;
                 worldContainer.addChild(floor);
 
-                const roomsFloor = new PIXI.Graphics();
-                roomsFloor.rect(50, 50, 550, MAP_HEIGHT - 100).fill(0xC19A6B); // Left Rooms
-                roomsFloor.rect(1800, 50, MAP_WIDTH - 1850, MAP_HEIGHT - 100).fill(0x8B5A2B); // Right Event Rooms
-                worldContainer.addChild(roomsFloor);
+                const roomGfx = new PIXI.Graphics();
+                roomGfx.zIndex = 1;
+                const wallThick = 40;
+                const doorSize = 140;
 
-                const wallGfx = new PIXI.Graphics();
-                for (let w of WALLS) {
-                    wallGfx.rect(w.x, w.y, w.w, w.h).fill(0x4A4A4A);
-                }
-                worldContainer.addChild(wallGfx);
+                WALLS.length = 4;
 
-                const treesGfx = new PIXI.Graphics();
-                for (let i = 0; i < 400; i++) {
-                    let tx = Math.random() * MAP_WIDTH;
-                    let ty = Math.random() * MAP_HEIGHT;
-                    if (Math.random() > 0.5) ty = Math.random() < 0.5 ? Math.random() * 50 : MAP_HEIGHT - 50 + Math.random() * 50;
-                    else tx = Math.random() < 0.5 ? Math.random() * 50 : MAP_WIDTH - 50 + Math.random() * 50;
-                    treesGfx.circle(tx, ty, 15 + Math.random() * 15).fill(0x1e8449);
-                    treesGfx.circle(tx + 5, ty + 5, 8 + Math.random() * 8).fill(0x2ecc71);
-                }
-                worldContainer.addChild(treesGfx);
-
-                const decGfx = new PIXI.Graphics();
-                for(let r=0; r<6; r++){
-                   for(let c=0; c<5; c++){
-                       let dx = 800 + (c * 180);
-                       let dy = 600 + (r * 300);
-                       decGfx.roundRect(dx, dy, 120, 70, 10).fill(0xecf0f1);
-                       decGfx.rect(dx + 15, dy - 20, 30, 20).fill(0x2c3e50);
-                       decGfx.rect(dx + 75, dy - 20, 30, 20).fill(0x2c3e50);
-                       decGfx.rect(dx + 15, dy + 70, 30, 20).fill(0x2c3e50);
-                       decGfx.rect(dx + 75, dy + 70, 30, 20).fill(0x2c3e50);
-                   }
-                }
-                
-                decGfx.rect(2050, 100, 1000, 750).fill(0xD0E5D2); 
-                decGfx.rect(2300, 150, 500, 100).fill(0xA0522D); 
-                for(let row=0; row<8; row++) {
-                    for(let col=0; col<16; col++) {
-                        decGfx.rect(2150 + (col*50), 350 + (row*40), 40, 20).fill(0x7f8c8d); 
-                    }
-                }
-                
-                for (let tbl of INTERACTABLES) {
-                    if (tbl.room.includes('Discussion') || tbl.room.includes('Cafeteria')) {
-                        decGfx.rect(tbl.x - 80, tbl.y - 80, 160, 160).fill(0x1A252F);
-                    }
-                    decGfx.circle(tbl.x, tbl.y, tbl.radius).fill(0xF39C12); 
-                    decGfx.circle(tbl.x, tbl.y, tbl.radius).stroke({ width: 4, color: 0xD68910, alpha: 1 });
+                STRUCTURAL_ROOMS.forEach(rm => {
+                    roomGfx.rect(rm.x, rm.y, rm.w, rm.h).fill({ color: rm.color, alpha: 0.15 });
                     
-                    decGfx.circle(tbl.x - tbl.radius - 15, tbl.y, 12).fill(0x2C3E50);
-                    decGfx.circle(tbl.x + tbl.radius + 15, tbl.y, 12).fill(0x2C3E50);
-                    decGfx.circle(tbl.x, tbl.y - tbl.radius - 15, 12).fill(0x2C3E50);
-                    decGfx.circle(tbl.x, tbl.y + tbl.radius + 15, 12).fill(0x2C3E50);
+                    let doorSide = rm.x < 1000 ? 'right' : 'left';
+                    /* Top Wall */  WALLS.push({ x: rm.x, y: rm.y, w: rm.w, h: wallThick }); 
+                    /* Bot Wall */  WALLS.push({ x: rm.x, y: rm.y + rm.h - wallThick, w: rm.w, h: wallThick }); 
+
+                    if (doorSide === 'right') {
+                         WALLS.push({ x: rm.x, y: rm.y, w: wallThick, h: rm.h }); 
+                         WALLS.push({ x: rm.x + rm.w - wallThick, y: rm.y, w: wallThick, h: rm.h/2 - doorSize/2 }); 
+                         WALLS.push({ x: rm.x + rm.w - wallThick, y: rm.y + rm.h/2 + doorSize/2, w: wallThick, h: rm.h/2 - doorSize/2 }); 
+                    } else {
+                         WALLS.push({ x: rm.x + rm.w - wallThick, y: rm.y, w: wallThick, h: rm.h }); 
+                         WALLS.push({ x: rm.x, y: rm.y, w: wallThick, h: rm.h/2 - doorSize/2 }); 
+                         WALLS.push({ x: rm.x, y: rm.y + rm.h/2 + doorSize/2, w: wallThick, h: rm.h/2 - doorSize/2 }); 
+                    }
+                    
+                    const text = new PIXI.Text({
+                        text: rm.name,
+                        style: { fontFamily: 'ui-sans-serif, sans-serif', fontSize: 26, fill: 0xffffff, fontWeight: '900', letterSpacing: 2 }
+                    });
+                    text.zIndex = 4;
+                    if (text.anchor) text.anchor.set(0.5, 0); 
+                    text.x = rm.x + rm.w/2;
+                    text.y = rm.y + 8;
+                    text.alpha = 0.85;
+                    worldContainer.addChild(text);
+                });
+
+                for (let w of WALLS) {
+                    roomGfx.rect(w.x, w.y, w.w, w.h).fill(0x2d3748); 
                 }
-                worldContainer.addChild(decGfx);
+
+                worldContainer.addChild(roomGfx);
+
+                const furnitureGfx = new PIXI.Graphics();
+                furnitureGfx.zIndex = 2;
+                
+                const drawChair = (cx, cy, dir) => {
+                    const color = 0x2A2A2A;
+                    furnitureGfx.roundRect(cx - 15, cy - 15, 30, 30, 5).fill(color);
+                    furnitureGfx.roundRect(
+                        dir === 'up' || dir === 'down' ? cx - 12 : (dir === 'left' ? cx - 18 : cx + 12),
+                        dir === 'left' || dir === 'right' ? cy - 12 : (dir === 'up' ? cy - 18 : cy + 12),
+                        dir === 'up' || dir === 'down' ? 24 : 6,
+                        dir === 'left' || dir === 'right' ? 24 : 6,
+                        2
+                    ).fill(0x111111);
+                };
+
+                const drawTable = (tx, ty, tw, th, isRound = false) => {
+                    const shadowAlpha = 0.4;
+                    if (isRound) {
+                        furnitureGfx.circle(tx, ty + 6, tw/2).fill({ color: 0x000000, alpha: shadowAlpha });
+                        furnitureGfx.circle(tx, ty, tw/2 + 2).fill(0x5C3A21); 
+                        furnitureGfx.circle(tx, ty, tw/2).fill(0xC19A6B); 
+                        WALLS.push({x: tx - tw/2, y: ty - tw/2, w: tw, h: tw});
+                    } else {
+                        furnitureGfx.roundRect(tx, ty + 6, tw, th, 8).fill({ color: 0x000000, alpha: shadowAlpha });
+                        furnitureGfx.roundRect(tx, ty, tw, th, 8).fill(0x5C3A21);
+                        furnitureGfx.roundRect(tx+2, ty+2, tw-4, th-4, 6).fill(0xC19A6B);
+                        WALLS.push({x: tx, y: ty, w: tw, h: th});
+                    }
+                };
+
+                STRUCTURAL_ROOMS.forEach(rm => {
+                    const cx = rm.x + rm.w/2;
+                    const cy = rm.y + rm.h/2;
+                    
+                    if (rm.name.includes('Dev Club Stage')) {
+                        drawTable(rm.x + 100, rm.y + 40, rm.w - 200, 100, false);
+                        for (let row = 0; row < 4; row++) {
+                            for (let col = 0; col < 8; col++) {
+                                drawChair(rm.x + 170 + (col * 80), rm.y + 260 + (row * 90), 'up');
+                            }
+                        }
+                    } 
+                    else if (rm.name.includes('Gaming Arena')) {
+                        for (let r = 0; r < 2; r++) {
+                            for (let c = 0; c < 2; c++) {
+                                let dx = rm.x + 100 + (c * 350);
+                                let dy = rm.y + 90 + (r * 180);
+                                drawTable(dx, dy, 250, 70, false);
+                                furnitureGfx.rect(dx + 20, dy + 10, 50, 10).fill(0x222222);
+                                furnitureGfx.rect(dx + 180, dy + 10, 50, 10).fill(0x222222);
+                                drawChair(dx + 45, dy + 100, 'up');
+                                drawChair(dx + 205, dy + 100, 'up');
+                            }
+                        }
+                    }
+                    else if (rm.name.includes('Task Desks')) {
+                        for (let row = 0; row < 3; row++) {
+                            for (let col = 0; col < 5; col++) {
+                                let dx = rm.x + 80 + (col * 150);
+                                let dy = rm.y + 60 + (row * 100);
+                                drawTable(dx, dy, 90, 50, false);
+                                drawChair(dx + 20, dy + 80, 'up');
+                                drawChair(dx + 70, dy + 80, 'up');
+                            }
+                        }
+                    }
+                    else if (rm.name.includes('Cafeteria')) {
+                        const cafeCenters = [
+                            {x: rm.x + 200, y: rm.y + 180}, {x: rm.x + 600, y: rm.y + 180},
+                            {x: rm.x + 400, y: rm.y + 360}, {x: rm.x + 200, y: rm.y + 470},
+                            {x: rm.x + 600, y: rm.y + 470}
+                        ];
+                        cafeCenters.forEach(pos => {
+                             drawTable(pos.x, pos.y, 140, 140, true);
+                             drawChair(pos.x, pos.y - 100, 'down');
+                             drawChair(pos.x, pos.y + 100, 'up');
+                             drawChair(pos.x - 100, pos.y, 'right');
+                             drawChair(pos.x + 100, pos.y, 'left');
+                        });
+                    }
+                    else if (rm.name.includes('Discussion Room')) {
+                        drawTable(cx, cy, 120, 120, true);
+                        drawChair(cx, cy - 90, 'down');
+                        drawChair(cx, cy + 90, 'up');
+                        drawChair(cx - 90, cy, 'right');
+                        drawChair(cx + 90, cy, 'left');
+                    }
+                    else {
+                        const leftTableX = rm.x + 120;
+                        const rightTableX = rm.x + rm.w - 120;
+                        const roomCy = cy - 5;
+                        
+                        drawTable(leftTableX - 30, roomCy - 40, 60, 80, false);
+                        drawChair(leftTableX - 55, roomCy, 'right');
+                        drawChair(leftTableX + 55, roomCy, 'left');
+                        drawChair(leftTableX, roomCy - 65, 'down');
+                        drawChair(leftTableX, roomCy + 65, 'up');
+
+                        drawTable(rightTableX - 30, roomCy - 40, 60, 80, false);
+                        drawChair(rightTableX - 55, roomCy, 'right');
+                        drawChair(rightTableX + 55, roomCy, 'left');
+                        drawChair(rightTableX, roomCy - 65, 'down');
+                        drawChair(rightTableX, roomCy + 65, 'up');
+                    }
+                });
+
+                worldContainer.addChild(furnitureGfx);
+
              } catch (e) {
                  console.error("Map creation error:", e);
              }
-
-            ROOM_LABELS.forEach(label => {
-                try {
-                const text = new PIXI.Text({
-                    text: label.text,
-                    style: { fontFamily: 'ui-sans-serif, sans-serif', fontSize: 24, fill: label.text.includes('Discussion') ? 0xffffff : 0x000000, fontWeight: '900', letterSpacing: 1 }
-                });
-                text.alpha = 0.6;
-                if (text.anchor) text.anchor.set(0.5, 0.5);
-                text.x = label.x;
-                text.y = label.y;
-                worldContainer.addChild(text);
-                } catch(err) {}
-            });
 
             const onResize = () => { app.renderer.resize(window.innerWidth, window.innerHeight); };
             window.addEventListener('resize', onResize);
@@ -242,54 +267,78 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
                 worldContainer.x = (window.innerWidth / 2) - (myState.x * wScale);
                 worldContainer.y = (window.innerHeight / 2) - (myState.y * wScale);
 
-                let closestSeat = null;
-                for (let tbl of INTERACTABLES) {
-                    const dist = Math.sqrt(Math.pow(myState.x - tbl.x, 2) + Math.pow(myState.y - tbl.y, 2));
-                    if (dist < tbl.radius + 30) {
-                        closestSeat = tbl;
+                let currentRoomCheck = null;
+                for (let rm of STRUCTURAL_ROOMS) {
+                    if (myState.x >= rm.x && myState.x <= rm.x + rm.w &&
+                        myState.y >= rm.y && myState.y <= rm.y + rm.h) {
+                        currentRoomCheck = rm.name;
                         break;
                     }
                 }
-                
-                if (closestSeat) {
-                    if (window.__nearbySeat?.id !== closestSeat.id) {
-                        window.__nearbySeat = closestSeat;
-                        setNearbyInteractable(closestSeat);
-                    }
-                } else {
-                    if (window.__nearbySeat) {
-                        window.__nearbySeat = null;
-                        setNearbyInteractable(null);
-                    }
-                }
 
-                if (window.__isSeated) return;
+                if (currentRoomCheck !== window.__currentRoom) {
+                    if (currentRoomCheck) {
+                        socket.emit('join_room', { roomName: currentRoomCheck, isSeated: false });
+                    } else {
+                        socket.emit('leave_room');
+                    }
+                    window.__currentRoom = currentRoomCheck;
+                }
 
                 let dx = 0; let dy = 0;
                 let speed = 6;
                 
-                if (keys.w || keys.ArrowUp) dy -= speed;
-                if (keys.s || keys.ArrowDown) dy += speed;
-                if (keys.a || keys.ArrowLeft) dx -= speed;
-                if (keys.d || keys.ArrowRight) dx += speed;
+                if (keys.w || keys.ArrowUp) { dy -= speed; window.__autoWalkTarget = null; }
+                if (keys.s || keys.ArrowDown) { dy += speed; window.__autoWalkTarget = null; }
+                if (keys.a || keys.ArrowLeft) { dx -= speed; window.__autoWalkTarget = null; }
+                if (keys.d || keys.ArrowRight) { dx += speed; window.__autoWalkTarget = null; }
+
+                if (window.__autoWalkTarget) {
+                    const tx = window.__autoWalkTarget.x;
+                    const ty = window.__autoWalkTarget.y;
+                    const dist = Math.sqrt(Math.pow(tx - myState.x, 2) + Math.pow(ty - myState.y, 2));
+                    if (dist < speed) {
+                        myState.x = tx; myState.y = ty;
+                        window.__autoWalkTarget = null;
+                        dx = 0; dy = 0;
+                    } else {
+                        dx = ((tx - myState.x) / dist) * speed;
+                        dy = ((ty - myState.y) / dist) * speed;
+                    }
+                }
 
                 if (dx !== 0 || dy !== 0) {
-                    if (dx !== 0 && dy !== 0) {
-                        const length = Math.sqrt(dx * dx + dy * dy);
-                        dx = (dx / length) * speed;
-                        dy = (dy / length) * speed;
+                    if (window.__autoWalkTarget) {
+                        myState.x += dx;
+                        myState.y += dy;
+                    } else {
+                        if (dx !== 0 && dy !== 0) {
+                            const length = Math.sqrt(dx * dx + dy * dy);
+                            dx = (dx / length) * speed;
+                            dy = (dy / length) * speed;
+                        }
+                        const newX = myState.x + dx;
+                        const newY = myState.y + dy;
+                        if (!checkWorldCollision(newX, myState.y)) myState.x = newX;
+                        if (!checkWorldCollision(myState.x, newY)) myState.y = newY;
                     }
 
-                    const newX = myState.x + dx;
-                    const newY = myState.y + dy;
-
-                    if (!checkWorldCollision(newX, myState.y)) myState.x = newX;
-                    if (!checkWorldCollision(myState.x, newY)) myState.y = newY;
-
-                    if (myState.x !== newX || myState.y !== newY) {
+                    if (myState.x !== myState.x - dx || myState.y !== myState.y - dy) {
                          onMyMovement(myState.x, myState.y);
-                    } else if (dx !== 0 || dy !== 0) {
-                         onMyMovement(myState.x, myState.y);
+                    }
+                }
+                
+                const myCont = avatarsRef.current[myUser?.socketId];
+                if (myCont && myCont.avatarSprite) {
+                    if (dx !== 0 || dy !== 0) {
+                        const tick = Date.now() / 150;
+                        myCont.avatarSprite.rotation = Math.sin(tick) * 0.15;
+                        myCont.avatarSprite.y = Math.abs(Math.cos(tick)) * -4;
+                        if (dx < 0) myCont.avatarSprite.scale.x = -1;
+                        if (dx > 0) myCont.avatarSprite.scale.x = 1;
+                    } else {
+                        myCont.avatarSprite.rotation = 0;
+                        myCont.avatarSprite.y = 0;
                     }
                 }
             }, 1000 / 60);
@@ -322,10 +371,6 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
     }, [globalZoom]);
 
     useEffect(() => {
-        window.__isSeated = isSeated;
-    }, [isSeated]);
-
-    useEffect(() => {
         if (!appReady || !appRef.current || !containerRef.current) return;
         const worldContainer = containerRef.current;
         const currentAvatars = avatarsRef.current;
@@ -355,10 +400,32 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
                 container = new PIXI.Container();
                 
                 try {
-                    const circle = new PIXI.Graphics();
                     const color = isMe ? 0x3B82F6 : 0xEF4444; 
-                    circle.circle(0, 0, PLAYER_RADIUS).fill(color);
-                    circle.circle(0, 0, PLAYER_RADIUS).stroke({ width: 3, color: 0xffffff, alpha: 0.5 });
+                    
+                    const avatarGrp = new PIXI.Container();
+                    
+                    const shadow = new PIXI.Graphics();
+                    shadow.ellipse(0, 16, 12, 5).fill({ color: 0x000000, alpha: 0.3 });
+                    avatarGrp.addChild(shadow);
+
+                    const body = new PIXI.Graphics();
+                    body.roundRect(-10, -5, 20, 22, 6).fill(color);
+                    avatarGrp.addChild(body);
+
+                    const head = new PIXI.Graphics();
+                    head.circle(0, -15, 11).fill(0xFFE0BD);
+                    avatarGrp.addChild(head);
+
+                    const hair = new PIXI.Graphics();
+                    const mod = (user.socketId ? user.socketId.charCodeAt(0) : 0) % 3;
+                    if (mod === 0) hair.roundRect(-12, -26, 24, 12, 6).fill(0x2C3E50);
+                    else if (mod === 1) hair.circle(0, -20, 12).fill(0xE67E22);
+                    else hair.rect(-10, -24, 20, 10).fill(0x8E44AD);
+                    avatarGrp.addChild(hair);
+                    
+                    container.addChild(avatarGrp);
+                    container.avatarSprite = avatarGrp;
+                    container.zIndex = 3;
                     
                     if (isMe) {
                         const ring = new PIXI.Graphics();
@@ -369,12 +436,11 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
 
                     const nameText = new PIXI.Text({
                         text: user.username,
-                        style: { fontFamily: 'ui-sans-serif, sans-serif', fontSize: 14, fill: 0xffffff, fontWeight: 'bold' }
+                        style: { fontFamily: 'ui-sans-serif, sans-serif', fontSize: 13, fill: 0xffffff, fontWeight: 'bold', dropShadow: true, dropShadowAlpha: 0.8, dropShadowDistance: 2 }
                     });
                     if (nameText.anchor) nameText.anchor.set(0.5, 0.5);
                     nameText.y = -35;
 
-                    container.addChild(circle);
                     container.addChild(nameText);
                 } catch (e) {
                     console.error("Avatar error", e);
@@ -410,17 +476,6 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
         <div className="relative w-full h-full">
             <div ref={canvasRef} className="absolute inset-0 outline-none border-none pointer-events-auto" />
             
-            {nearbyInteractable && !isSeated && (
-                <div className="absolute bottom-32 left-1/2 -translate-x-1/2 bg-indigo-600 border border-indigo-400 px-6 py-3 rounded-full text-white font-bold shadow-2xl animate-bounce z-50 transition-all select-none">
-                    Press <kbd className="bg-white/20 px-2 py-0.5 rounded mx-1 font-mono shadow-sm">X</kbd> to sit at {nearbyInteractable.room}
-                </div>
-            )}
-            {isSeated && (
-                <div className="absolute bottom-32 left-1/2 -translate-x-1/2 bg-gray-800 border border-gray-600 px-6 py-3 rounded-full text-white font-medium shadow-2xl z-50 transition-all flex items-center gap-2 select-none">
-                    <span className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse shadow-green-500 shadow-sm"></span>
-                    Joined <strong>{nearbyInteractable?.room}</strong>. Use movement keys to stand up.
-                </div>
-            )}
         </div>
     );
 }

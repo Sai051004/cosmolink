@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { socket } from './utils/socket';
 import World from './components/World';
 import ChatPanel from './components/ChatPanel';
-import { Mic, MicOff, Video, VideoOff, MonitorUp, Smile, Map, LogOut, ZoomIn, ZoomOut, Settings } from 'lucide-react';
+import { STRUCTURAL_ROOMS } from './components/World';
+import { Mic, MicOff, Video, VideoOff, MonitorUp, Smile, Map as MapIcon, LogOut, ZoomIn, ZoomOut, Settings } from 'lucide-react';
 
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null }; }
@@ -21,6 +22,14 @@ class ErrorBoundary extends React.Component {
     return this.props.children;
   }
 }
+
+const VideoPlayer = ({ stream }) => {
+    const ref = useRef(null);
+    useEffect(() => {
+        if (ref.current && stream) ref.current.srcObject = stream;
+    }, [stream]);
+    return <video ref={ref} autoPlay playsInline className="w-full h-full object-cover transform -scale-x-100"></video>;
+};
 
 function App() {
   const [joined, setJoined] = useState(false);
@@ -44,6 +53,10 @@ function App() {
   const screenStreamRef = useRef(null);
   const localVideoRef = useRef(null);
   
+  const [remoteStreams, setRemoteStreams] = useState({});
+  const peersRef = useRef(new Map());
+  const PROXIMITY_RADIUS = 300;
+  
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [activeReaction, setActiveReaction] = useState(null);
   
@@ -52,31 +65,52 @@ function App() {
   const [selectedMic, setSelectedMic] = useState('');
   const [selectedCamera, setSelectedCamera] = useState('');
 
-  const ZONE_COORDS = {
-      'MERN STACK': {x: 400, y: 150},
-      'UI/UX': {x: 400, y: 450},
-      'Ethical Hacking': {x: 400, y: 750},
-      'DSA': {x: 400, y: 1050},
-      'Flutter': {x: 400, y: 1350},
-      'Financial Modelling': {x: 400, y: 1650},
-      'Data Analytics': {x: 100, y: 150},
-      'Python': {x: 100, y: 450},
-      'Dev Club Stage': {x: 2150, y: 400},
-      'Gaming Arena': {x: 2150, y: 1000},
-      'Task Desks': {x: 2150, y: 1600},
-      'Cafeteria': {x: 1200, y: 2400},
-      'Discussion Room 1': {x: 2150, y: 2200},
-      'Discussion Room 2': {x: 2150, y: 2700}
-  };
-
   const teleportToZone = (z) => {
-      if (ZONE_COORDS[z]) {
-          handleMyMovement(ZONE_COORDS[z].x, ZONE_COORDS[z].y);
+      const room = STRUCTURAL_ROOMS.find(r => r.name === z);
+      if (room) {
+          window.__autoWalkTarget = { x: room.x + room.w/2, y: room.y + room.h/2 };
       }
   };
 
   // Constants mapping
-  const ZONES = ['MERN STACK', 'UI/UX', 'Ethical Hacking', 'DSA', 'Flutter', 'Financial Modelling', 'Data Analytics', 'Python', 'Dev Club Stage', 'Gaming Arena', 'Task Desks', 'Cafeteria', 'Discussion Room 1', 'Discussion Room 2'];
+  const ZONES = STRUCTURAL_ROOMS.map(r => r.name);
+
+  const createPeerConnection = (targetId, isInitiator) => {
+      const peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      peersRef.current.set(targetId, peer);
+
+      if (localStreamRef.current) {
+          localStreamRef.current.getTracks().forEach(track => {
+              peer.addTrack(track, localStreamRef.current);
+          });
+      }
+      if (screenStreamRef.current) {
+          screenStreamRef.current.getTracks().forEach(track => {
+              peer.addTrack(track, screenStreamRef.current);
+          });
+      }
+
+      peer.onicecandidate = (event) => {
+          if (event.candidate) {
+              socket.emit('ice_candidate', { targetId, candidate: event.candidate });
+          }
+      };
+
+      peer.ontrack = (event) => {
+          setRemoteStreams(prev => ({
+              ...prev,
+              [targetId]: event.streams[0]
+          }));
+      };
+
+      if (isInitiator) {
+           peer.createOffer()
+               .then(offer => peer.setLocalDescription(offer))
+               .then(() => socket.emit('webrtc_offer', { targetId, offer: peer.localDescription }))
+               .catch(console.error);
+      }
+      return peer;
+  };
 
   useEffect(() => {
     socket.on('active-users', (users) => setActiveUsers(users));
@@ -111,6 +145,27 @@ function App() {
         setMessages(prev => [...prev, msg]);
     });
 
+    socket.on('webrtc_offer', async ({ senderId, offer }) => {
+        let peer = peersRef.current.get(senderId);
+        if (!peer) peer = createPeerConnection(senderId, false);
+        await peer.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await peer.createAnswer();
+        await peer.setLocalDescription(answer);
+        socket.emit('webrtc_answer', { targetId: senderId, answer });
+    });
+
+    socket.on('webrtc_answer', async ({ senderId, answer }) => {
+        const peer = peersRef.current.get(senderId);
+        if (peer) await peer.setRemoteDescription(new RTCSessionDescription(answer));
+    });
+
+    socket.on('ice_candidate', async ({ senderId, candidate }) => {
+        const peer = peersRef.current.get(senderId);
+        if (peer) {
+            try { await peer.addIceCandidate(new RTCIceCandidate(candidate)); } catch (e) { console.error(e); }
+        }
+    });
+
     return () => {
       socket.off('active-users');
       socket.off('user-joined');
@@ -121,8 +176,50 @@ function App() {
       socket.off('join_room_success');
       socket.off('leave_room_success');
       socket.off('receive_message');
+      socket.off('webrtc_offer');
+      socket.off('webrtc_answer');
+      socket.off('ice_candidate');
     };
   }, []);
+
+  useEffect(() => {
+      if (!myUser || !socket.connected) return;
+
+      const newNearby = activeUsers.filter(u => {
+          if (u.socketId === socket.id) return false;
+          
+          if (u.currentRoom && myUser.currentRoom && u.currentRoom === myUser.currentRoom) {
+              return true; 
+          }
+          if (u.currentRoom !== myUser.currentRoom) {
+              return false; 
+          }
+
+          const dist = Math.sqrt(Math.pow(u.x - myUser.x, 2) + Math.pow(u.y - myUser.y, 2));
+          return dist <= PROXIMITY_RADIUS;
+      });
+      const nearbyIds = newNearby.map(u => u.socketId);
+
+      peersRef.current.forEach((peer, peerId) => {
+          if (!nearbyIds.includes(peerId)) {
+              peer.close();
+              peersRef.current.delete(peerId);
+              setRemoteStreams(prev => {
+                  const updated = { ...prev };
+                  delete updated[peerId];
+                  return updated;
+              });
+          }
+      });
+
+      newNearby.forEach(user => {
+          if (!peersRef.current.has(user.socketId)) {
+              if (socket.id > user.socketId) {
+                  createPeerConnection(user.socketId, true);
+              }
+          }
+      });
+  }, [myUser, activeUsers]);
 
   const getDevices = async () => {
       try {
@@ -196,6 +293,13 @@ function App() {
           screenStreamRef.current?.getTracks().forEach(t => t.stop());
           screenStreamRef.current = null;
           setScreenShare(false);
+          if (localStreamRef.current) {
+              const videoTrack = localStreamRef.current.getVideoTracks()[0];
+              peersRef.current.forEach(peer => {
+                  const sender = peer.getSenders().find(s => s.track && s.track.kind === 'video');
+                  if (sender && videoTrack) sender.replaceTrack(videoTrack);
+              });
+          }
           return;
       }
       try {
@@ -203,9 +307,14 @@ function App() {
           screenStreamRef.current = stream;
           setScreenShare(true);
           
-          stream.getVideoTracks()[0].onended = () => {
-              screenStreamRef.current = null;
-              setScreenShare(false);
+          const screenTrack = stream.getVideoTracks()[0];
+          peersRef.current.forEach(peer => {
+              const sender = peer.getSenders().find(s => s.track && s.track.kind === 'video');
+              if (sender) sender.replaceTrack(screenTrack);
+          });
+
+          screenTrack.onended = () => {
+              toggleScreenShare(); // recursive call to cleanly reset
           };
       } catch (e) {
           console.error("Screen share error:", e);
@@ -334,7 +443,7 @@ function App() {
                         {ZONES.map(z => (
                              <div key={z} onClick={() => teleportToZone(z)} className="flex items-center gap-3 text-gray-400 hover:text-gray-100 hover:bg-gray-800/60 p-2 rounded-lg cursor-pointer transition-colors group">
                                  <div className="p-1 rounded bg-gray-800 group-hover:bg-gray-700 transition-colors">
-                                     <Map size={14} className="text-blue-400 group-hover:text-blue-300" />
+                                     <MapIcon size={14} className="text-blue-400 group-hover:text-blue-300" />
                                  </div>
                                  <span className="truncate text-sm font-medium">{z}</span>
                              </div>
@@ -347,6 +456,21 @@ function App() {
             <div className="flex-1 relative bg-black outline-none border-none">
                 <World myUser={myUser} activeUsers={activeUsers} onMyMovement={handleMyMovement} globalZoom={zoomLevel} />
                 
+                {/* REMOTE PEER STREAMS */}
+                <div className="absolute top-14 left-1/2 -translate-x-1/2 flex gap-4 z-40 pointer-events-none">
+                    {Object.entries(remoteStreams).map(([peerId, stream]) => {
+                        const user = activeUsers.find(u => u.socketId === peerId);
+                        return (
+                            <div key={peerId} className="w-48 h-32 bg-black rounded-xl overflow-hidden shadow-2xl border border-gray-700/50 relative pointer-events-auto">
+                                <VideoPlayer stream={stream} />
+                                <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-0.5 rounded text-[10px] font-bold text-white backdrop-blur-sm truncate max-w-[90%]">
+                                    {user ? user.username : '...'}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
                 {/* FLOATING ZOOM CONTROLS */}
                 <div className="absolute right-6 top-6 flex flex-col gap-2 z-20">
                     <button onClick={() => setZoomLevel(z => Math.min(2.5, z + 0.25))} className="bg-[#111]/80 p-2.5 rounded-xl text-gray-300 hover:text-white hover:bg-gray-800 backdrop-blur-md border border-gray-700/80 shadow-2xl transition-all hover:scale-105 active:scale-95"><ZoomIn size={18}/></button>

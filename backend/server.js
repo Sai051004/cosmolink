@@ -159,6 +159,19 @@ io.on('connection', (socket) => {
         });
     });
 
+    // --- WebRTC Signaling Relays ---
+    socket.on('webrtc_offer', ({ targetId, offer }) => {
+        io.to(targetId).emit('webrtc_offer', { senderId: socket.id, offer });
+    });
+
+    socket.on('webrtc_answer', ({ targetId, answer }) => {
+        io.to(targetId).emit('webrtc_answer', { senderId: socket.id, answer });
+    });
+
+    socket.on('ice_candidate', ({ targetId, candidate }) => {
+        io.to(targetId).emit('ice_candidate', { senderId: socket.id, candidate });
+    });
+
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
         

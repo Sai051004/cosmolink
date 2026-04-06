@@ -14,7 +14,7 @@ export default function ChatPanel({ room, messages, setMessages, onClose }) {
   const handleSend = (e) => {
     e.preventDefault();
     if (inputText.trim()) {
-      socket.emit('send-message', { room, message: inputText });
+      socket.emit('send_message', { room, message: inputText });
       setInputText('');
     }
   };
