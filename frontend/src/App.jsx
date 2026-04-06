@@ -87,52 +87,35 @@ function App() {
   // Constants mapping
   const ZONES = STRUCTURAL_ROOMS.map(r => r.name);
 
-  const createPeerConnection = (targetId, isInitiator) => {
-      const peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-      peersRef.current.set(targetId, peer);
-
-      const audioTransceiver = peer.addTransceiver('audio', { direction: 'sendrecv' });
-      const cameraTransceiver = peer.addTransceiver('video', { direction: 'sendrecv' });
-      const screenTransceiver = peer.addTransceiver('video', { direction: 'sendrecv' });
+  const createPeerConnection = (targetId) => {
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+      });
+      peersRef.current.set(targetId, pc);
 
       if (localStreamRef.current) {
-          const audioTrack = localStreamRef.current.getAudioTracks()[0];
-          const videoTrack = localStreamRef.current.getVideoTracks()[0];
-          if (audioTrack) audioTransceiver.sender.replaceTrack(audioTrack);
-          if (videoTrack) cameraTransceiver.sender.replaceTrack(videoTrack);
-      }
-      if (screenStreamRef.current) {
-          const screenTrack = screenStreamRef.current.getVideoTracks()[0];
-          if (screenTrack) screenTransceiver.sender.replaceTrack(screenTrack);
+          localStreamRef.current.getTracks().forEach(track => {
+              pc.addTrack(track, localStreamRef.current);
+          });
       }
 
-      peer.onicecandidate = (event) => {
+      pc.ontrack = (event) => {
+          const remoteStream = event.streams[0];
+          if (remoteStream) {
+              setRemoteStreams(prev => ({
+                  ...prev,
+                  [targetId]: { stream: remoteStream }
+              }));
+          }
+      };
+
+      pc.onicecandidate = (event) => {
           if (event.candidate) {
               socket.emit('ice_candidate', { targetId, candidate: event.candidate });
           }
       };
 
-      const updateStreams = () => setRemoteStreams(prev => ({ ...prev }));
-      cameraTransceiver.receiver.track.addEventListener('unmute', updateStreams);
-      cameraTransceiver.receiver.track.addEventListener('mute', updateStreams);
-      screenTransceiver.receiver.track.addEventListener('unmute', updateStreams);
-      screenTransceiver.receiver.track.addEventListener('mute', updateStreams);
-
-      const cameraStream = new MediaStream([audioTransceiver.receiver.track, cameraTransceiver.receiver.track]);
-      const screenStream = new MediaStream([screenTransceiver.receiver.track]);
-
-      setRemoteStreams(prev => ({
-          ...prev,
-          [targetId]: { camera: cameraStream, screen: screenStream }
-      }));
-
-      if (isInitiator) {
-           peer.createOffer()
-               .then(offer => peer.setLocalDescription(offer))
-               .then(() => socket.emit('webrtc_offer', { targetId, offer: peer.localDescription }))
-               .catch(console.error);
-      }
-      return peer;
+      return pc;
   };
 
   useEffect(() => {
@@ -179,17 +162,17 @@ function App() {
     });
 
     socket.on('webrtc_offer', async ({ senderId, offer }) => {
-        let peer = peersRef.current.get(senderId);
-        if (!peer) peer = createPeerConnection(senderId, false);
-        await peer.setRemoteDescription(new RTCSessionDescription(offer));
-        const answer = await peer.createAnswer();
-        await peer.setLocalDescription(answer);
-        socket.emit('webrtc_answer', { targetId: senderId, answer });
+        let pc = peersRef.current.get(senderId);
+        if (!pc) pc = createPeerConnection(senderId);
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit('webrtc_answer', { targetId: senderId, answer: pc.localDescription });
     });
 
     socket.on('webrtc_answer', async ({ senderId, answer }) => {
-        const peer = peersRef.current.get(senderId);
-        if (peer) await peer.setRemoteDescription(new RTCSessionDescription(answer));
+        const pc = peersRef.current.get(senderId);
+        if (pc) await pc.setRemoteDescription(new RTCSessionDescription(answer));
     });
 
     socket.on('ice_candidate', async ({ senderId, candidate }) => {
@@ -248,7 +231,11 @@ function App() {
       newNearby.forEach(user => {
           if (!peersRef.current.has(user.socketId)) {
               if (socket.id > user.socketId) {
-                  createPeerConnection(user.socketId, true);
+                  const pc = createPeerConnection(user.socketId);
+                  pc.createOffer()
+                    .then(offer => pc.setLocalDescription(offer))
+                    .then(() => socket.emit('webrtc_offer', { targetId: user.socketId, offer: pc.localDescription }))
+                    .catch(console.error);
               }
           }
       });
@@ -300,9 +287,8 @@ function App() {
           const newTrack = stream.getAudioTracks()[0];
           localStreamRef.current.addTrack(newTrack);
           peersRef.current.forEach((peer) => {
-              const audioTransceivers = peer.getTransceivers().filter(t => t.receiver && t.receiver.track && t.receiver.track.kind === 'audio');
-              const audioTransceiver = audioTransceivers[0];
-              if (audioTransceiver) audioTransceiver.sender.replaceTrack(newTrack);
+              const sender = peer.getSenders().find(s => s.track && s.track.kind === 'audio');
+              if (sender) sender.replaceTrack(newTrack);
           });
           setMicOn(true);
       } catch (e) {
@@ -327,9 +313,8 @@ function App() {
           const newTrack = stream.getVideoTracks()[0];
           localStreamRef.current.addTrack(newTrack);
           peersRef.current.forEach((peer) => {
-              const videoTransceivers = peer.getTransceivers().filter(t => t.receiver && t.receiver.track && t.receiver.track.kind === 'video');
-              const cameraTransceiver = videoTransceivers[0];
-              if (cameraTransceiver) cameraTransceiver.sender.replaceTrack(newTrack);
+              const sender = peer.getSenders().find(s => s.track && s.track.kind === 'video');
+              if (sender) sender.replaceTrack(newTrack);
           });
           setCameraOn(true);
       } catch (e) {
@@ -343,11 +328,12 @@ function App() {
           screenStreamRef.current?.getTracks().forEach(t => t.stop());
           screenStreamRef.current = null;
           setScreenShare(false);
-          peersRef.current.forEach(peer => {
-              const videoTransceivers = peer.getTransceivers().filter(t => t.receiver && t.receiver.track && t.receiver.track.kind === 'video');
-              const screenTransceiver = videoTransceivers[1];
-              if (screenTransceiver) screenTransceiver.sender.replaceTrack(null);
+          const videoTrack = localStreamRef.current?.getVideoTracks()[0];
+          peersRef.current.forEach(pc => {
+              const sender = pc.getSenders().find(s => s.track && s.track.kind === "video");
+              if (sender && videoTrack) sender.replaceTrack(videoTrack);
           });
+          if (localVideoRef.current && localStreamRef.current) localVideoRef.current.srcObject = localStreamRef.current;
           return;
       }
       try {
@@ -356,15 +342,13 @@ function App() {
           setScreenShare(true);
           
           const screenTrack = stream.getVideoTracks()[0];
-          peersRef.current.forEach(peer => {
-              const videoTransceivers = peer.getTransceivers().filter(t => t.receiver && t.receiver.track && t.receiver.track.kind === 'video');
-              const screenTransceiver = videoTransceivers[1];
-              if (screenTransceiver) screenTransceiver.sender.replaceTrack(screenTrack);
+          peersRef.current.forEach(pc => {
+              const sender = pc.getSenders().find(s => s.track && s.track.kind === "video");
+              if (sender) sender.replaceTrack(screenTrack);
           });
+          if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
-          screenTrack.onended = () => {
-              toggleScreenShare(); // recursive call to cleanly reset
-          };
+          screenTrack.onended = () => toggleScreenShare();
       } catch (e) {
           console.error("Screen share error:", e);
       }
@@ -527,38 +511,21 @@ function App() {
                 
                 {/* REMOTE PEER STREAMS */}
                 <div className="absolute top-14 left-1/2 -translate-x-1/2 flex gap-4 z-40 pointer-events-none">
-                    {Object.entries(remoteStreams).map(([peerId, streams]) => {
+                    {Object.entries(remoteStreams).map(([peerId, data]) => {
                         const user = activeUsers.find(u => u.socketId === peerId);
-                        
-                        const hasCamera = streams.camera && streams.camera.getVideoTracks()[0] && !streams.camera.getVideoTracks()[0].muted;
-                        const hasScreen = streams.screen && streams.screen.getVideoTracks()[0] && !streams.screen.getVideoTracks()[0].muted;
-                        
-                        if (!hasCamera && !hasScreen) return null;
+                        if (!data.stream) return null;
 
                         return (
                             <div key={peerId} className="flex gap-2 relative pointer-events-auto shrink-0 transition-all">
-                                {hasCamera && (
-                                    <div 
-                                        onClick={() => setEnlargedStream({ type: 'camera', id: peerId, username: user ? user.username : '...' })}
-                                        className="w-24 md:w-48 h-16 md:h-32 bg-black rounded-xl overflow-hidden shadow-2xl border border-gray-700/50 relative cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all hover:scale-105 shrink-0"
-                                    >
-                                        <VideoPlayer stream={streams.camera} />
-                                        <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-0.5 rounded text-[10px] font-bold text-white backdrop-blur-sm truncate max-w-[90%] pointer-events-none">
-                                            {user ? user.username : '...'}
-                                        </div>
+                                <div 
+                                    onClick={() => setEnlargedStream({ type: 'stream', id: peerId, username: user ? user.username : '...' })}
+                                    className="w-32 md:w-64 h-24 md:h-40 bg-black rounded-xl overflow-hidden shadow-2xl border border-gray-700/50 relative cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all hover:scale-105 shrink-0"
+                                >
+                                    <VideoPlayer stream={data.stream} />
+                                    <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-0.5 rounded text-[10px] font-bold text-white backdrop-blur-sm truncate max-w-[90%] pointer-events-none">
+                                        {user ? user.username : '...'}
                                     </div>
-                                )}
-                                {hasScreen && (
-                                    <div 
-                                        onClick={() => setEnlargedStream({ type: 'screen', id: peerId, username: user ? user.username : '...' })}
-                                        className="w-32 md:w-64 h-20 md:h-40 bg-black rounded-xl overflow-hidden shadow-2xl border border-blue-500/50 relative cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all hover:scale-105 shrink-0"
-                                    >
-                                        <VideoPlayer stream={streams.screen} />
-                                        <div className="absolute bottom-2 left-2 bg-blue-600/90 px-2 py-0.5 rounded text-[10px] font-bold text-white backdrop-blur-sm truncate max-w-[90%] pointer-events-none">
-                                            {user ? user.username : '...'} (Screen)
-                                        </div>
-                                    </div>
-                                )}
+                                </div>
                             </div>
                         );
                     })}
@@ -641,12 +608,12 @@ function App() {
                     </div>
                 </div>
 
-                {enlargedStream && remoteStreams[enlargedStream.id] && remoteStreams[enlargedStream.id][enlargedStream.type] && (
+                {enlargedStream && remoteStreams[enlargedStream.id] && remoteStreams[enlargedStream.id].stream && (
                     <div className="absolute inset-0 bg-black/80 z-[100] flex items-center justify-center p-8 backdrop-blur-sm" onClick={() => setEnlargedStream(null)}>
                         <div className="w-full max-w-5xl aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl relative border border-gray-700/50 pointer-events-auto" onClick={e => e.stopPropagation()}>
-                            <VideoPlayer stream={remoteStreams[enlargedStream.id][enlargedStream.type]} />
+                            <VideoPlayer stream={remoteStreams[enlargedStream.id].stream} />
                             <div className="absolute bottom-4 left-4 bg-black/60 px-4 py-2 rounded-lg text-sm font-bold text-white backdrop-blur-sm shadow-xl">
-                                {enlargedStream.username} {enlargedStream.type === 'screen' ? '(Screen)' : ''}
+                                {enlargedStream.username}
                             </div>
                             <button onClick={() => setEnlargedStream(null)} className="absolute top-4 right-4 bg-black/50 hover:bg-black/80 text-white w-10 h-10 rounded-full flex items-center justify-center backdrop-blur-sm transition-all border border-white/10 hover:border-white/30 font-bold hover:scale-105 active:scale-95 shadow-xl pointer-events-auto">
                                 ✕
