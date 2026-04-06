@@ -137,9 +137,9 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
                 STRUCTURAL_ROOMS.forEach(rm => {
                     const g = new PIXI.Graphics();
                     g.rect(rm.x, rm.y, rm.w, rm.h)
-                     .fill({ color: rm.color, alpha: 1 })
-                     .stroke({ color: rm.color, alpha: 1, width: 3 });
-                    g.alpha = 0.05;
+                     .fill({ color: rm.color, alpha: 0.15 })
+                     .stroke({ color: rm.color, alpha: 0.9, width: 3 });
+                    g.alpha = 0.4; // Base highly visible transparency
                     roomGraphics[rm.name] = g;
                     roomContainer.addChild(g);
                     
@@ -169,7 +169,7 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
                 });
 
                 for (let w of WALLS) {
-                    roomGfx.rect(w.x, w.y, w.w, w.h).fill(0x1e293b); 
+                    roomGfx.rect(w.x, w.y, w.w, w.h).fill(0x334155); 
                 }
 
                 roomContainer.addChild(roomGfx);
@@ -338,7 +338,7 @@ export default function World({ myUser, activeUsers, onMyMovement, globalZoom })
                 
                 for (let rName in roomGraphics) {
                     const g = roomGraphics[rName];
-                    const targetAlpha = rName === currentRoomCheck ? 0.3 : 0.05;
+                    const targetAlpha = rName === currentRoomCheck ? 1.0 : 0.4;
                     g.alpha += (targetAlpha - g.alpha) * 0.1;
                 }
 
