@@ -28,6 +28,9 @@ const VideoPlayer = ({ stream }) => {
     useEffect(() => {
         if (ref.current && stream) {
             ref.current.srcObject = stream;
+            stream.onaddtrack = () => {
+                if (ref.current) ref.current.srcObject = stream;
+            };
             ref.current.play().catch(e => console.error("Video remote play error:", e));
         }
     }, [stream]);
@@ -60,6 +63,7 @@ function App() {
   
   const [remoteStreams, setRemoteStreams] = useState({});
   const peersRef = useRef(new Map());
+  const iceCandidateQueue = useRef(new Map());
   const PROXIMITY_RADIUS = 300;
   
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
@@ -163,6 +167,15 @@ function App() {
         setMessages(prev => [...prev, msg]);
     });
 
+    const processIceQueue = async (pc, id) => {
+        if (iceCandidateQueue.current.has(id)) {
+            for (let candidate of iceCandidateQueue.current.get(id)) {
+                try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch (e) { console.error(e); }
+            }
+            iceCandidateQueue.current.delete(id);
+        }
+    };
+
     socket.on('webrtc_offer', async ({ senderId, offer }) => {
         let pc = peersRef.current.get(senderId);
         if (!pc) pc = createPeerConnection(senderId);
@@ -170,17 +183,24 @@ function App() {
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         socket.emit('webrtc_answer', { targetId: senderId, answer: pc.localDescription });
+        await processIceQueue(pc, senderId);
     });
 
     socket.on('webrtc_answer', async ({ senderId, answer }) => {
         const pc = peersRef.current.get(senderId);
-        if (pc) await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        if (pc) { 
+            await pc.setRemoteDescription(new RTCSessionDescription(answer)); 
+            await processIceQueue(pc, senderId);
+        }
     });
 
     socket.on('ice_candidate', async ({ senderId, candidate }) => {
-        const peer = peersRef.current.get(senderId);
-        if (peer) {
-            try { await peer.addIceCandidate(new RTCIceCandidate(candidate)); } catch (e) { console.error(e); }
+        const pc = peersRef.current.get(senderId);
+        if (pc && pc.remoteDescription) {
+            try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch (e) { console.error(e); }
+        } else {
+            if (!iceCandidateQueue.current.has(senderId)) iceCandidateQueue.current.set(senderId, []);
+            iceCandidateQueue.current.get(senderId).push(candidate);
         }
     });
 
